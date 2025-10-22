@@ -137,6 +137,7 @@ $RECYCLE.BIN/
 # ========== AI Tool Specific ==========
 # Claude Code
 .claude/
+!.claude/statusline/
 .claude-cache/
 
 # Gemini CLI
