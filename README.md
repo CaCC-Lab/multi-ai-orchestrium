@@ -228,3 +228,5 @@ tdd-multi-ai-review "レビュー"
 MIT License - 詳細は [LICENSE](LICENSE) を参照
 
 Copyright (c) 2025 Multi-AI Orchestrium Contributors
+
+💖 **Support development:** [Become a sponsor](https://github.com/sponsors/CaCC-Lab)
