@@ -1,0 +1,18 @@
+# Multi-AI Orchestrium - Python Requirements
+# Multi-AI Orchestration Platform for Claude Code
+# Version: 3.0.0 (Multi-AI)
+# Updated: 2025-10-22
+
+# ========== CORE DEPENDENCIES ==========
+# Required for Multi-AI orchestration system
+
+vibelogger>=0.1.1        # AI-native logging with structured context
+pyyaml>=6.0              # YAML configuration parser (multi-ai-profiles.yaml)
+psutil>=5.9.0            # System resource monitoring and process management
+pandas>=1.5.0            # Multi-AI metrics analysis and reporting
+numpy>=1.24.0            # pandas dependency
+redis>=4.0.0             # Redis client for rate limiting and caching
+python-json-logger>=2.0.0  # Structured JSON logging format
+python-dotenv>=0.21.0    # Environment variable management (.env.collective)
+click>=8.1.0             # CLI framework for command execution
+

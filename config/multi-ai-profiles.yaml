@@ -1,0 +1,743 @@
+# Multi-AI Orchestration Profiles Configuration
+# Version: 3.0 - Qwen + Droid実証実験によりMulti-AI統合決定
+# Based on: output/qwen-vs-droid/02_公平な比較_最終版.md
+
+version: "3.0"
+default_profile: "balanced-multi-ai"
+
+# AI Capabilities Reference
+ai_capabilities:
+  claude:
+    role: "CTO - 最高技術責任者"
+    strengths: ["戦略設計", "アーキテクチャ", "品質保証", "オーケストレーション"]
+    performance: "HumanEval未公開、長文理解最強"
+
+  gemini:
+    role: "CIO - 情報収集責任者"
+    strengths: ["Web検索", "セキュリティ分析", "最新技術調査", "トレンド把握"]
+    performance: "200万トークンコンテキスト"
+
+  amp:
+    role: "PM - プロジェクトマネージャー"
+    strengths: ["スレッド管理", "長期プロジェクト", "MCP統合", "VibeLogger連携"]
+    performance: "--stream-json対応"
+
+  qwen:
+    role: "高速プロトタイパー"
+    official_name: "Qwen Code"
+    version: "0.0.14"
+    strengths: ["高速コード生成(37秒)", "日本語対応", "ローカル実行", "プライバシー"]
+    performance: "実証実験で94/100点達成"
+    benchmark:
+      speed: "37秒"
+      quality: "94/100点"
+
+  droid:
+    role: "エンタープライズエンジニア"
+    strengths: ["本番品質", "自動検証", "エンタープライズ設計", "保守性"]
+    performance: "自動compileall、型ヒント完備"
+    benchmark:
+      speed: "180秒"
+      quality: "84/100点"
+
+  codex:
+    role: "コードレビュアー・最適化担当"
+    strengths: ["比較評価", "最適化", "デバッグ", "パフォーマンス"]
+    performance: "問題解決、エラー削減-80%"
+
+  cursor:
+    role: "IDE統合スペシャリスト"
+    strengths: ["IDE連携", "リアルタイム補完", "テスト実行", "DX向上"]
+    performance: "開発者体験最適化"
+
+profiles:
+  # Balanced Multi-AI Profile - Default
+  balanced-multi-ai:
+    name: "Balanced Multi-AI - 全AI活用（速度と品質の両立）"
+    description: "Qwen高速プロトタイプ + Droid本番品質 + Codex比較評価（5-8分）"
+    ai_count: 7
+    workflows:
+      multi-ai-full-orchestrate:
+        phases:
+          # Phase 1: 戦略・設計（3AI並列）
+          - name: "Strategic Planning & Research"
+            parallel:
+              - name: "Claude - Architecture Design"
+                ai: claude
+                role: architecture-design
+                timeout: 300  # タイムアウト統一: 120s→300s (安全マージン確保)
+                blocking: false
+              - name: "Gemini - Requirements & Latest Tech"
+                ai: gemini
+                role: requirements-research
+                timeout: 300  # 実測最適化: 60s→300s (5.0倍, 包括的レビュー対応, commit 392f2a5)
+              - name: "Amp - Project Management Setup"
+                ai: amp
+                role: project-management
+                timeout: 600  # 実測最適化: 90s→600s (6.7倍, PM分析詳細対応, commit 9de5276)
+                blocking: false
+
+          # Phase 2: 並列実装（Qwen + Droid）
+          - name: "Parallel Implementation - Speed vs Quality"
+            parallel:
+              - name: "Qwen - Fast Prototype (37s target)"
+                ai: qwen
+                role: fast-prototype
+                timeout: 300  # 実測最適化: 60s→300s (5.0倍, 包括的レビュー対応, commit 02b90bf)
+                priority: speed
+              - name: "Droid - Enterprise Implementation (180s target)"
+                ai: droid
+                role: enterprise-implementation
+                timeout: 900  # 実測最適化: 600s→900s (1.5倍, 大規模タスク対応, commit 121ea29)
+                priority: quality
+
+          # Phase 3: 比較評価と最適化（Codex）
+          - name: "Code Review & Optimization"
+            ai: codex
+            role: compare-optimize
+            input_from: ["qwen", "droid"]
+            timeout: 300  # 実測最適化: 120s→300s (2.5倍, Qwen+Droid比較対応, commit 4fde5e4)
+            tasks:
+              - "Qwen実装 vs Droid実装の比較評価"
+              - "両方の良いところ取りハイブリッド実装"
+              - "パフォーマンス最適化"
+              - "バグ修正"
+
+          # Phase 4: 品質保証と統合（Claude + Cursor）
+          - name: "Final Quality Assurance & Integration"
+            parallel:
+              - name: "Claude - Architecture Validation"
+                ai: claude
+                role: final-architecture-check
+                timeout: 300  # タイムアウト統一: 90s→300s (安全マージン確保)
+                blocking: false
+              - name: "Cursor - IDE Integration & Testing"
+                ai: cursor
+                role: integration-testing
+                timeout: 600  # 実測最適化: 120s→600s (5.0倍, Phase1-3統合30-40KB, commit 4fde5e4)
+                blocking: false
+
+      # 高速プロトタイピング特化
+      multi-ai-speed-prototype:
+        phases:
+          - name: "Quick Research"
+            ai: gemini
+            role: quick-research
+            timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+
+          - name: "Qwen Fast Prototype"
+            ai: qwen
+            role: ultra-fast-prototype
+            timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+
+          - name: "Quick Review"
+            ai: codex
+            role: quick-review
+            timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+
+          - name: "Integration"
+            ai: cursor
+            role: fast-integration
+            timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+            blocking: false
+
+      # エンタープライズ品質特化
+      multi-ai-enterprise-quality:
+        phases:
+          - name: "Comprehensive Planning"
+            parallel:
+              - name: "Claude - Enterprise Architecture"
+                ai: claude
+                role: enterprise-architecture
+                timeout: 300  # タイムアウト統一: 180s→300s (安全マージン確保)
+              - name: "Gemini - Security & Compliance"
+                ai: gemini
+                role: security-compliance
+                timeout: 300  # タイムアウト統一: 90s→300s (安全マージン確保)
+              - name: "Amp - Long-term Project Management"
+                ai: amp
+                role: long-term-pm
+                timeout: 300  # タイムアウト統一: 120s→300s (安全マージン確保)
+                blocking: false
+
+          - name: "Droid Enterprise Implementation"
+            ai: droid
+            role: enterprise-full
+            timeout: 900  # エンタープライズフル実装は最も時間がかかる
+
+          - name: "Multi-layer Review"
+            parallel:
+              - name: "Codex - Code Quality"
+                ai: codex
+                role: code-quality-review
+                timeout: 300  # タイムアウト統一: 120s→300s (安全マージン確保)
+              - name: "Qwen - Test Coverage"
+                ai: qwen
+                role: comprehensive-testing
+                timeout: 300  # タイムアウト統一: 90s→300s (安全マージン確保)
+              - name: "Claude - Architecture Audit"
+                ai: claude
+                role: architecture-audit
+                timeout: 300  # タイムアウト統一: 150s→300s (安全マージン確保)
+                blocking: false
+
+          - name: "Final Integration"
+            ai: cursor
+            role: enterprise-integration
+            timeout: 300  # タイムアウト統一: 180s→300s (安全マージン確保)
+            blocking: false
+
+      # ハイブリッド開発（最も推奨）
+      multi-ai-hybrid-development:
+        phases:
+          # ステップ1: 超高速プロトタイプ（Qwen）
+          - name: "Lightning Prototype"
+            ai: qwen
+            role: lightning-prototype
+            timeout: 300  # 実測最適化: 45s→300s (Qwen Code起動時間考慮)
+            output: "prototype_v1"
+
+          # ステップ2: フィードバック収集
+          - name: "Parallel Feedback"
+            parallel:
+              - name: "Claude - Strategic Feedback"
+                ai: claude
+                role: strategic-feedback
+                input: "prototype_v1"
+                timeout: 300  # 実測最適化: 60s→300s (5.0倍, 包括的フィードバック対応)
+                blocking: false
+              - name: "Gemini - Security Feedback"
+                ai: gemini
+                role: security-feedback
+                input: "prototype_v1"
+                timeout: 300  # 実測最適化: 45s→300s (6.7倍, Web検索・セキュリティ分析対応)
+                blocking: false  # 非ブロッキングに変更: Geminiタイムアウトでワークフロー全体が停止しないように
+
+          # ステップ3: 本番品質実装（Droid + Feedback）
+          - name: "Production Implementation"
+            ai: droid
+            role: production-implementation
+            input_from: ["qwen", "claude", "gemini"]
+            timeout: 900  # 本番品質実装は十分な時間を確保
+            output: "production_v1"
+
+          # ステップ4: 最適化（Codex）
+          - name: "Optimization"
+            ai: codex
+            role: performance-optimization
+            input: "production_v1"
+            timeout: 300  # 実測最適化: 90s→300s (3.3倍, Qwen+Droid比較・最適化対応)
+            output: "optimized_v1"
+
+          # ステップ5: 最終統合とPM管理
+          - name: "Final Integration & PM"
+            parallel:
+              - name: "Cursor - Integration"
+                ai: cursor
+                role: final-integration
+                input: "optimized_v1"
+                timeout: 300  # 実測最適化: 120s→300s (2.5倍, IDE統合・テスト実行対応)
+                blocking: false
+              - name: "Amp - Documentation & Thread"
+                ai: amp
+                role: documentation-thread
+                timeout: 600  # 実測最適化: ドキュメント・スレッド管理も600秒に統一
+                blocking: false
+
+      # Multi-AI Consensus Review
+      multi-ai-consensus-review:
+        phases:
+          - name: "Parallel Individual Reviews from All 7 AIs"
+            parallel:
+              - name: "Claude - Architecture Review"
+                ai: claude
+                role: architecture-patterns-maintainability
+                timeout: 600
+                blocking: false
+              - name: "Gemini - Security & Performance Review"
+                ai: gemini
+                role: security-performance-scalability
+                timeout: 600
+              - name: "Amp - Project Continuity Review"
+                ai: amp
+                role: project-continuity-maintainability
+                timeout: 600
+                blocking: false
+              - name: "Qwen - Fast Iteration Review"
+                ai: qwen
+                role: prototype-iteration-speed
+                timeout: 600
+              - name: "Droid - Enterprise Quality Review"
+                ai: droid
+                role: enterprise-quality-standards
+                timeout: 900  # 642行ファイルで600秒タイムアウト実績あり
+              - name: "Codex - Code Optimization Review"
+                ai: codex
+                role: code-optimization-performance
+                timeout: 600
+              - name: "Cursor - Integration & DX Review"
+                ai: cursor
+                role: integration-dx-usability
+                timeout: 600
+
+          - name: "Consensus Synthesis"
+            ai: claude
+            role: consensus-synthesis-decision
+            input_from: ["gemini", "amp", "qwen", "droid", "codex", "cursor"]
+            timeout: 600
+            blocking: false
+
+      # Multi-AI ChatDev Development
+      multi-ai-chatdev-develop:
+        phases:
+          - name: "CEO & PM - Vision & Planning"
+            parallel:
+              - name: "Claude - Product Vision"
+                ai: claude
+                role: ceo-product-vision
+                timeout: 300  # タイムアウト統一: 90s→300s (安全マージン確保)
+              - name: "Amp - Project Management Setup"
+                ai: amp
+                role: project-management-setup
+                timeout: 600  # 実測最適化: PM初期設定も600秒に統一
+                blocking: false
+
+          - name: "CTO & Research - Design & Tech Stack"
+            parallel:
+              - name: "Claude - Technical Design"
+                ai: claude
+                role: cto-technical-design
+                timeout: 600
+              - name: "Gemini - Latest Best Practices"
+                ai: gemini
+                role: tech-stack-research
+                timeout: 600
+                blocking: false
+
+          - name: "Parallel Implementation"
+            parallel:
+              - name: "Qwen - Fast Implementation"
+                ai: qwen
+                role: programmer-fast
+                timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+              - name: "Droid - Quality Implementation"
+                ai: droid
+                role: programmer-quality
+                timeout: 900  # ChatDev品質実装も900秒に統一
+
+          - name: "Reviewer - Code Review"
+            ai: codex
+            role: code-reviewer
+            timeout: 300  # タイムアウト統一: 90s→300s (安全マージン確保)
+
+          - name: "Tester - Testing & QA"
+            ai: cursor
+            role: tester-qa
+            timeout: 300  # タイムアウト統一: 120s→300s (安全マージン確保)
+
+      # Multi-AI Pre-Implementation Discussion
+      multi-ai-discuss-before:
+        phases:
+          - name: "Parallel Multi-Perspective Analysis"
+            parallel:
+              - name: "Claude - Requirements & Risks"
+                ai: claude
+                role: requirements-risk-analysis
+                timeout: 600  # 10分 - 徹底議論のため延長
+              - name: "Gemini - Latest Tech & Best Practices"
+                ai: gemini
+                role: tech-research
+                timeout: 600  # 10分 - 徹底議論のため延長
+              - name: "Amp - Project Impact & Timeline"
+                ai: amp
+                role: project-impact-analysis
+                timeout: 600  # 10分 - 徹底議論のため延長
+                blocking: false
+              - name: "Codex - Implementation Complexity"
+                ai: codex
+                role: complexity-analysis
+                timeout: 600  # 10分 - 徹底議論のため延長
+              - name: "Qwen - Fast Prototyping Feasibility"
+                ai: qwen
+                role: prototyping-feasibility
+                timeout: 600  # 10分 - 徹底議論のため延長
+              - name: "Droid - Enterprise Requirements"
+                ai: droid
+                role: enterprise-requirements
+                timeout: 900  # 議論タスクも900秒に統一（600秒成功実績あり、余裕を持たせる）
+
+          - name: "Discussion Synthesis"
+            ai: claude
+            role: discussion-synthesis
+            input_from: ["gemini", "amp", "codex", "qwen", "droid"]
+            timeout: 600  # 10分 - 徹底合意形成のため延長
+
+      # Multi-AI Post-Implementation Review
+      multi-ai-review-after:
+        phases:
+          - name: "Parallel Reviews from All 7 AIs"
+            parallel:
+              - name: "Claude - Architecture Review"
+                ai: claude
+                role: architecture-review
+                timeout: 300  # タイムアウト統一: 90s→300s (安全マージン確保)
+              - name: "Gemini - Security & Performance"
+                ai: gemini
+                role: security-performance-review
+                timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+              - name: "Amp - Documentation & Continuity"
+                ai: amp
+                role: documentation-continuity-review
+                timeout: 600  # 実測最適化: ドキュメント継続性レビューも600秒に統一
+                blocking: false
+              - name: "Qwen - Code Iteration Speed"
+                ai: qwen
+                role: iteration-speed-review
+                timeout: 300  # タイムアウト統一: 45s→300s (安全マージン確保)
+              - name: "Droid - Production Readiness"
+                ai: droid
+                role: production-readiness
+                timeout: 900  # 実測最適化: 600秒でも不足、900秒に統一
+              - name: "Codex - Code Quality & Optimization"
+                ai: codex
+                role: code-quality-review
+                timeout: 300  # タイムアウト統一: 90s→300s (安全マージン確保)
+              - name: "Cursor - Integration & Testing"
+                ai: cursor
+                role: integration-testing-review
+                timeout: 300  # タイムアウト統一: 90s→300s (安全マージン確保)
+
+          - name: "Review Summary & Action Items"
+            ai: claude
+            role: review-summary
+            input_from: ["gemini", "amp", "qwen", "droid", "codex", "cursor"]
+            timeout: 300  # タイムアウト統一: 90s→300s (安全マージン確保)
+
+      # Multi-AI Chain of Agents Analysis
+      multi-ai-coa-analyze:
+        phases:
+          - name: "Parallel Worker Analysis (All 7 AIs)"
+            parallel:
+              - name: "Claude - Structure Analysis"
+                ai: claude
+                role: structure-analysis
+                timeout: 300  # タイムアウト統一: 120s→300s (安全マージン確保)
+              - name: "Gemini - Content Analysis"
+                ai: gemini
+                role: content-analysis
+                timeout: 300  # タイムアウト統一: 90s→300s (安全マージン確保)
+              - name: "Amp - Project Context Analysis"
+                ai: amp
+                role: project-context-analysis
+                timeout: 600  # 実測最適化: プロジェクトコンテキスト分析も600秒に統一
+                blocking: false
+              - name: "Qwen - Code Example Analysis"
+                ai: qwen
+                role: code-example-analysis
+                timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+              - name: "Droid - Implementation Pattern Analysis"
+                ai: droid
+                role: implementation-pattern-analysis
+                timeout: 900  # 実測最適化: 分析タスクも900秒に統一
+              - name: "Codex - Technical Complexity Analysis"
+                ai: codex
+                role: technical-analysis
+                timeout: 300  # タイムアウト統一: 90s→300s (安全マージン確保)
+              - name: "Cursor - Integration Pattern Analysis"
+                ai: cursor
+                role: integration-pattern-analysis
+                timeout: 300  # タイムアウト統一: 90s→300s (安全マージン確保)
+
+          - name: "Manager Synthesis"
+            ai: claude
+            role: manager-synthesis
+            input_from: ["gemini", "amp", "qwen", "droid", "codex", "cursor"]
+            timeout: 300  # タイムアウト統一: 150s→300s (安全マージン確保)
+
+  # Speed-First Multi-AI Profile
+  speed-first-multi-ai:
+    name: "Speed First Multi-AI - 高速開発"
+    description: "Qwen主体 + 最小限のレビュー（2-4分）"
+    ai_count: 7
+    workflows:
+      multi-ai-orchestrate:
+        phases:
+          - name: "Parallel Ultra-Fast Start"
+            parallel:
+              - name: "Gemini - Quick Research"
+                ai: gemini
+                role: quick-research
+                timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+              - name: "Qwen - Lightning Prototype"
+                ai: qwen
+                role: lightning-code
+                timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+
+          - name: "Quick Review"
+            ai: codex
+            role: quick-optimization
+            timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+
+          - name: "Fast Integration"
+            ai: cursor
+            role: fast-integration
+            timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+            blocking: false
+
+  # Quality-First Multi-AI Profile
+  quality-first-multi-ai:
+    name: "Quality First Multi-AI - 徹底品質管理"
+    description: "Droid主体 + 全AIレビュー（15-20分）"
+    ai_count: 7
+    workflows:
+      multi-ai-orchestrate:
+        phases:
+          - name: "Comprehensive Planning"
+            parallel:
+              - name: "Claude - Architecture"
+                ai: claude
+                role: enterprise-architecture
+                timeout: 300  # タイムアウト統一: 180s→300s (安全マージン確保)
+              - name: "Gemini - Security Research"
+                ai: gemini
+                role: comprehensive-security
+                timeout: 300  # タイムアウト統一: 120s→300s (安全マージン確保)
+              - name: "Amp - Long-term PM"
+                ai: amp
+                role: long-term-project-management
+                timeout: 300  # タイムアウト統一: 150s→300s (安全マージン確保)
+                blocking: false
+
+          - name: "Enterprise Implementation"
+            ai: droid
+            role: enterprise-implementation-full
+            timeout: 900  # quality-firstプロファイルも900秒に統一
+
+          - name: "Round 1 Review"
+            parallel:
+              - name: "Codex - Code Quality"
+                ai: codex
+                role: comprehensive-review
+                timeout: 300  # タイムアウト統一: 150s→300s (安全マージン確保)
+              - name: "Qwen - Test Coverage"
+                ai: qwen
+                role: comprehensive-testing
+                timeout: 300  # タイムアウト統一: 120s→300s (安全マージン確保)
+              - name: "Claude - Architecture Audit"
+                ai: claude
+                role: deep-architecture-audit
+                timeout: 300  # タイムアウト統一: 180s→300s (安全マージン確保)
+                blocking: false
+
+          - name: "Optimization"
+            ai: codex
+            role: deep-optimization
+            timeout: 300  # タイムアウト統一: 120s→300s (安全マージン確保)
+
+          - name: "Round 2 Review"
+            parallel:
+              - name: "Gemini - Final Security"
+                ai: gemini
+                role: final-security-audit
+                timeout: 300  # タイムアウト統一: 90s→300s (安全マージン確保)
+              - name: "Qwen - Final Testing"
+                ai: qwen
+                role: final-comprehensive-test
+                timeout: 300  # タイムアウト統一: 90s→300s (安全マージン確保)
+              - name: "Cursor - Integration Review"
+                ai: cursor
+                role: final-integration-review
+                timeout: 300  # タイムアウト統一: 120s→300s (安全マージン確保)
+
+          - name: "Final Polish"
+            ai: droid
+            role: final-polish
+            timeout: 900  # 実測最適化: 最終仕上げも900秒に統一
+
+# TDD Workflow Profiles
+# 統一設定: tdd-multi-ai.sh と tdd-multi-ai-phases.sh がこのセクションを参照
+tdd_workflows:
+  # Classic TDD Cycle (Red-Green-Refactor)
+  classic_cycle:
+    name: "Classic TDD - Red Green Refactor"
+    description: "伝統的な3フェーズTDD (Plan→Red→Green→Refactor→Review)"
+    plan:
+      primary: amp
+      context: "Project planning with TDD strategy, timeline, and risk analysis"
+      timeout: 600
+    red:
+      primary: droid
+      fallback: cursor
+      context: "Strict test design with edge cases, enterprise-grade unit tests"
+      timeout: 900
+    green:
+      primary: qwen
+      fallback: droid
+      context: "Fast implementation with fallback to production quality"
+      timeout: 300
+      parallel: true  # Qwen + Droid parallel implementation
+    refactor:
+      primary: codex
+      reviewer: claude
+      context: "Optimization and architecture review"
+      timeout: 300
+    review:
+      primary: gemini
+      secondary: amp
+      context: "Technical and security review, PM review"
+      timeout: 600
+
+  # Speed-First TDD (Qwen中心)
+  speed_first:
+    name: "Speed First TDD - 高速開発"
+    description: "Qwen主体の超高速TDD（2-4分）"
+    plan:
+      primary: qwen
+      context: "Quick planning"
+      timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+    red:
+      primary: qwen
+      context: "Fast test design"
+      timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+    green:
+      primary: qwen
+      context: "Ultra-fast implementation"
+      timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+    refactor:
+      primary: codex
+      context: "Quick optimization"
+      timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+    review:
+      primary: gemini
+      context: "Quick technical review"
+      timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+
+  # Quality-First TDD (Droid中心)
+  quality_first:
+    name: "Quality First TDD - 徹底品質"
+    description: "Droid主体のエンタープライズ品質TDD（15-20分）"
+    plan:
+      primary: amp
+      secondary: claude
+      context: "Comprehensive planning with enterprise architecture"
+      timeout: 600
+    red:
+      primary: droid
+      context: "Enterprise test strategy with comprehensive coverage"
+      timeout: 900
+    green:
+      primary: droid
+      context: "Production-grade implementation with full validation"
+      timeout: 900
+    refactor:
+      primary: codex
+      reviewer: claude
+      secondary: droid
+      context: "Deep optimization with multi-layer review"
+      timeout: 300
+    review:
+      primary: claude
+      secondary: gemini
+      tertiary: amp
+      context: "Architecture audit, security review, PM review"
+      timeout: 600
+
+  # Balanced TDD (推奨デフォルト)
+  balanced:
+    name: "Balanced TDD - バランス型"
+    description: "速度と品質の最適バランス（7-10分）"
+    plan:
+      primary: amp
+      context: "Balanced planning"
+      timeout: 300
+    red:
+      primary: droid
+      fallback: qwen
+      context: "Quality test design with speed fallback"
+      timeout: 600
+    green:
+      primary: qwen
+      fallback: droid
+      parallel: true
+      context: "Fast prototype + Production quality parallel"
+      timeout: 300
+    refactor:
+      primary: codex
+      reviewer: claude
+      context: "Standard optimization"
+      timeout: 300  # タイムアウト統一: 180s→300s (安全マージン確保)
+    review:
+      primary: gemini
+      secondary: amp
+      context: "Balanced review"
+      timeout: 300
+
+  # 6-Phase Comprehensive TDD
+  six_phases:
+    name: "6-Phase TDD - 包括的開発"
+    description: "7フェーズ包括的TDD（Phase0-6）"
+    phase0_project_setup:
+      primary: amp
+      context: "Comprehensive TDD project plan with sprint planning and risk management"
+      timeout: 600
+    phase1_research:
+      primary: gemini
+      context: "Requirements research with best practices 2025, security, and industry standards"
+      timeout: 600
+    phase2_test_design:
+      primary: qwen
+      secondary: droid
+      parallel: true
+      context: "Fast test specs + Enterprise test strategy"
+      timeout: 600
+    phase3_architecture:
+      primary: cursor
+      secondary: amp
+      parallel: true
+      context: "Enterprise architecture design + Project alignment"
+      timeout: 600
+    phase4_implementation:
+      primary: claude
+      support:
+        - ai: qwen
+          role: "Fast prototype"
+          timeout: 300
+        - ai: droid
+          role: "Production code"
+          timeout: 900
+      parallel_support: true
+      context: "Claude implements with Qwen+Droid parallel assistance"
+      timeout: 300
+    phase5_optimization:
+      primary: codex
+      validator: droid
+      context: "Code optimization + Production quality validation"
+      timeout: 300
+    phase6_final_review:
+      primary: gemini
+      secondary: amp
+      tertiary: cursor
+      parallel: true
+      context: "Technical excellence + PM completion + Integration review"
+      timeout: 600
+
+# Migration notes from 5AI to Multi-AI
+migration:
+  from: "5ai-profiles.yaml v2.0"
+  to: "multi-ai-profiles.yaml v3.0"
+  changes:
+    - "Added Amp (PM role) for long-term project management"
+    - "Added Droid (Enterprise Engineer role) for production quality"
+    - "Qwen role changed: Tester → Fast Prototyper"
+    - "Codex role enhanced: Implementation → Review & Optimization"
+    - "Parallel Qwen+Droid implementation pattern"
+    - "Added TDD workflows configuration section (v3.1)"
+  performance_improvements:
+    - "Speed: Qwen 37s (5x faster than Droid)"
+    - "Quality: Droid 84pt vs Qwen 94pt (complementary)"
+    - "Success rate: 88% → 98% (redundancy)"
+    - "Development speed: +300% (fast prototyping)"
+  references:
+    - "output/qwen-vs-droid/02_公平な比較_最終版.md"
+    - "output/5ai-multi-ai-debate/00_synthesis_report.md"
+    - "TDD_Multi-AI_INTEGRATION_PLAN.md"

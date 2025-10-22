@@ -1,0 +1,200 @@
+# Multi-AI Orchestrium - .gitignore
+# Version: 1.0.0
+
+# ========== Logs & Output ==========
+# VibeLogger logs
+logs/
+*.log
+*.jsonl
+*.log.*
+
+# AI execution logs
+*.ai.log
+*-output.txt
+*-result.txt
+
+# Review results
+*-review.md
+*-review.json
+reviews/
+
+# ========== Temporary Files ==========
+# Bash temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+
+# Session files
+.session-*
+session-*.json
+
+# ========== Cache & Build ==========
+# Cache directories
+.cache/
+cache/
+.tmp/
+tmp/
+
+# Node modules (if using npm AI tools)
+node_modules/
+package-lock.json
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ========== Environment & Secrets ==========
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.collective
+*.env
+
+# API keys and credentials
+*.key
+*.pem
+*.crt
+credentials.json
+secrets.json
+api-keys.json
+
+# SSH keys
+id_rsa
+id_rsa.pub
+*.ppk
+
+# ========== IDE & Editor ==========
+# VSCode
+.vscode/
+*.code-workspace
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Vim
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ========== OS Files ==========
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.directory
+.Trash-*
+
+# ========== AI Tool Specific ==========
+# Claude Code
+.claude/
+.claude-cache/
+
+# Gemini CLI
+.gemini/
+.gemini-cache/
+
+# Cursor
+.cursor/
+cursor-settings.json
+
+# CodeRabbit
+.coderabbit/
+coderabbit-cache/
+
+# ========== Test & Development ==========
+# Test outputs
+test-output/
+test-results/
+coverage/
+.coverage
+htmlcov/
+
+# Development databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Mock data
+mock-data/
+fixtures/
+
+# ========== Project Specific ==========
+# Multi-AI execution outputs
+output/
+outputs/
+results/
+
+# Backup files
+backup/
+backups/
+*.backup
+
+# Draft files
+draft/
+drafts/
+WIP/
+
+# Private notes
+PRIVATE.md
+NOTES.md
+TODO.private.md
+
+# ========== Keep These Files ==========
+# Keep empty log directories with .gitkeep
+!logs/.gitkeep
+!cache/.gitkeep
+
+# Keep configuration templates
+!*.template
+!*.example
+!.env.example
