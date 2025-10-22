@@ -1,18 +1,18 @@
-  # Multi-AI Orchestrium
+# Multi-AI Orchestrium
 
-  **複数のAIを協調させる次世代開発フレームワーク**
+**複数のAIを協調させる次世代開発フレームワーク**
 
-  ChatDevとChain-of-Agentsを統合し、Claude、Gemini、Amp、Qwen、Droid、Codex、Cursorの
-  複数のAIツールを並列・順次実行で協調させ、高速かつ高品質な開発を実現します。
+ChatDevとChain-of-Agentsを統合し、Claude、Gemini、Amp、Qwen、Droid、Codex、Cursorの
+複数のAIツールを並列・順次実行で協調させ、高速かつ高品質な開発を実現します。
 
-  ## 🌟 主な特徴
+## 🌟 主な特徴
 
-  - **YAML駆動設計**: スクリプト変更なしで役割分担を変更可能
-  - **2つの協調パターン**: ChatDev（役割ベース）+ CoA（分割統治）
-  - **フォールトトレランス**: 一部AIが失敗しても処理継続
-  - **VibeLogger統合**: AI最適化された構造化ログ
-  - **柔軟なタイムアウト制御**: AI毎に最適化された実行時間管理
- 
+- **YAML駆動設計**: スクリプト変更なしで役割分担を変更可能
+- **2つの協調パターン**: ChatDev（役割ベース）+ CoA（分割統治）
+- **フォールトトレランス**: 一部AIが失敗しても処理継続
+- **VibeLogger統合**: AI最適化された構造化ログ
+- **柔軟なタイムアウト制御**: AI毎に最適化された実行時間管理
+
 ## 事前準備
  各AIツールの公式サイトを参考にインストールしてください。
 - [**Claude Code**](https://docs.claude.com/ja/docs/claude-code/overview)
