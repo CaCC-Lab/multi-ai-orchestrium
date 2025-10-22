@@ -64,6 +64,14 @@ wheels/
 .installed.cfg
 *.egg
 
+# Exception: Keep scripts/lib/ directories (Bash libraries)
+!scripts/lib/
+!scripts/lib/**
+!scripts/orchestrate/lib/
+!scripts/orchestrate/lib/**
+!scripts/tdd/lib/
+!scripts/tdd/lib/**
+
 # ========== Environment & Secrets ==========
 # Environment files
 .env
