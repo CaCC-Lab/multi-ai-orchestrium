@@ -198,6 +198,10 @@ PRIVATE.md
 NOTES.md
 TODO.private.md
 
+# Example/Demo projects (do not push)
+tetris/
+evangelion-puyopuyo/
+
 # ========== Keep These Files ==========
 # Keep empty log directories with .gitkeep
 !logs/.gitkeep
