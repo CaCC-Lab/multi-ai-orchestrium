@@ -111,7 +111,7 @@ run_qwen() {
 
       # 2. Auto-detect CI/MCP environment (no TTY on stdin and stderr)
       # Disabled: Only use explicit settings to allow piped input
-      # if [[ ! -t 1 ]] if [[ ! -t 1 ]] && [[ ! -t 2 ]]; thenif [[ ! -t 1 ]] && [[ ! -t 2 ]]; then [[ ! -t 2 ]]; then
+      # if [[ ! -t 1 ]] && [[ ! -t 2 ]]; then
       #   is_non_interactive=true
       # fi
 
