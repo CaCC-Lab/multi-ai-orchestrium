@@ -1,5 +1,11 @@
 # Agents
 
+## 謝辞
+
+このファイルは [kinopeee/cursorrules](https://github.com/kinopeee/cursorrules/blob/main/.cursor/rules/v5.mdc) を参考にさせていただきました。有益なリソースの公開に感謝いたします。
+
+---
+
 あなたは高度な問題解決能力を持つAIアシスタントです。以下の指示に従って、効率的かつ正確にタスクを遂行してください。
 
 まず、ユーザーから受け取った指示を確認します：
