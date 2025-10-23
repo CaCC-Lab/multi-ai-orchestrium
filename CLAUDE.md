@@ -172,6 +172,102 @@ CLAUDE_MCP_TIMEOUT=600s ./bin/claude-wrapper.sh --prompt "複雑なタスク"
 echo "あなたのタスク" | ./bin/gemini-wrapper.sh --stdin
 ```
 
+## ファイルベースプロンプトシステム (Phase 1-2)
+
+**NEW**: 大規模プロンプト（>1KB）の自動ファイル経由ルーティング
+
+### 概要
+
+システムは自動的に以下のルーティングを行います:
+- **小規模プロンプト** (<1KB): コマンドライン引数経由（高速）
+- **大規模プロンプト** (≥1KB): セキュアな一時ファイル経由（スケーラブル）
+
+### 使用例
+
+```bash
+# 小規模プロンプト（自動でコマンドライン引数を使用）
+call_ai_with_context "claude" "シンプルなタスク" 300
+
+# 大規模プロンプト（自動でファイル経由を使用）
+LARGE_SPEC=$(cat 10kb-specification.txt)
+call_ai_with_context "claude" "$LARGE_SPEC" 600
+
+# 従来のcall_ai()も引き続き動作（内部でcall_ai_with_context()を呼ぶ）
+call_ai "gemini" "$LARGE_PROMPT" 300
+```
+
+### 自動ファイル処理の動作
+
+```
+[Phase 1] プロンプト受信
+  ↓
+[Phase 2] サイズチェック (${#prompt} >= 1024?)
+  ↓
+  YES → [Phase 3] セキュアファイル作成
+    ├─ mktemp で一意ファイル生成
+    ├─ chmod 600 で権限設定
+    ├─ プロンプト書き込み
+    └─ [Phase 4] ラッパー呼び出し（stdin redirect）
+      └─ wrapper.sh < /tmp/prompt-ai-XXXXXX
+  ↓
+  NO → [Phase 5] コマンドライン引数
+    └─ wrapper.sh --prompt "..."
+  ↓
+[Phase 6] 自動クリーンアップ（trap EXIT）
+```
+
+### トラブルシューティング
+
+#### 問題: 大規模プロンプトでタイムアウト
+
+```bash
+# 解決策: タイムアウトを延長
+call_ai_with_context "claude" "$LARGE_PROMPT" 900  # 15分
+```
+
+#### 問題: 一時ファイル作成失敗
+
+```bash
+# 自動フォールバック: 1KBに切り詰めてコマンドライン引数を使用
+# ログに表示: "File creation failed, falling back to truncated command-line"
+
+# 手動対処:
+# 1. /tmpの空き容量確認
+df -h /tmp
+
+# 2. 権限確認
+ls -ld /tmp
+
+# 3. TMPDIR環境変数の設定
+export TMPDIR=/path/to/writable/dir
+```
+
+#### 問題: 並列実行時のファイル競合
+
+```bash
+# 問題なし: mktemp が一意ファイル名を生成
+# 各並列プロセスは独立した一時ファイルを使用
+```
+
+### パフォーマンスガイドライン
+
+| プロンプトサイズ | 推奨方法 | 実行速度 |
+|-----------------|---------|---------|
+| < 100B | コマンドライン | 即座 |
+| 100B - 1KB | コマンドライン | 即座 |
+| 1KB - 10KB | ファイル経由 | +5-10ms (ファイルI/O) |
+| 10KB - 100KB | ファイル経由 | +10-50ms |
+| > 100KB | ファイル経由 | +50-200ms |
+
+**結論**: ファイル経由のオーバーヘッドは無視できるレベル（<200ms）
+
+### セキュリティ機能
+
+- **chmod 600**: 所有者のみ読み書き可能
+- **自動クリーンアップ**: trap でEXIT/INT/TERMシグナル時に削除
+- **一意ファイル名**: mktemp で衝突を防止
+- **サニタイゼーション**: 依然として`sanitize_input()`を通過
+
 ## ロギング: VibeLogger統合
 
 すべてのスクリプトは`bin/vibe-logger-lib.sh`にある**VibeLogger**（AI最適化構造化ロギング）を使用します。

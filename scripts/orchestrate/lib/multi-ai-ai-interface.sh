@@ -164,20 +164,10 @@ supports_file_input() {
     local ai_name="$1"
 
     case "$ai_name" in
-        claude)
-            # Claude MCP supports file input
-            return 0
-            ;;
-        codex)
-            # Codex CLI supports --input flag
-            return 0
-            ;;
-        gemini|droid)
-            # Supports stdin redirect
-            return 0
-            ;;
-        qwen|cursor|amp)
-            # Need verification - fallback to stdin for safety
+        claude|codex|gemini|droid|qwen|cursor|amp)
+            # Phase 1.3: All wrappers use stdin redirect (<file) for now
+            # Future: Add --prompt-file flag support in Phase 3
+            # Returning 1 means "use stdin redirect" (the fallback path)
             return 1
             ;;
         *)
@@ -350,9 +340,23 @@ call_ai_with_context() {
 
         return $exit_code
     else
-        # Small prompt: Use existing command-line argument method
+        # Small prompt: Use command-line arguments (direct wrapper call)
         log_info "[$ai_name] Small prompt (${context_size}B), using command-line arguments"
-        call_ai "$ai_name" "$context" "$timeout" "$output_file"
-        return $?
+
+        # Check AI availability first
+        check_ai_with_details "$ai_name" || return 1
+
+        # Call wrapper directly to avoid circular dependency
+        local wrapper_script="$PROJECT_ROOT/bin/${ai_name}-wrapper.sh"
+
+        if [ -f "$wrapper_script" ]; then
+            timeout "$timeout" "$wrapper_script" --prompt "$context" ${output_file:+> "$output_file"} 2>&1
+            return $?
+        else
+            # Fallback to direct CLI
+            log_warning "[$ai_name] Wrapper not found, using direct CLI"
+            timeout "$timeout" "$ai_name" --prompt "$context" ${output_file:+> "$output_file"} 2>&1
+            return $?
+        fi
     fi
 }

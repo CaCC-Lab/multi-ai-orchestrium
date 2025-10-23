@@ -10,7 +10,7 @@
 #
 # Dependencies:
 #   - lib/multi-ai-core.sh (logging, utilities, phase management)
-#   - lib/multi-ai-ai-interface.sh (call_ai function)
+#   - lib/multi-ai-ai-interface.sh (call_ai_with_context function for file-based prompts)
 #   - lib/multi-ai-config.sh (configuration, YAML workflow execution)
 #   - scripts/codex-review.sh (Codex automated review)
 #   - scripts/coderabbit-review.sh (CodeRabbit automated review)
@@ -95,11 +95,11 @@ multi-ai-speed-prototype() {
 - リスク管理計画を作成"
 
     # Launch strategic layer in parallel
-    call_ai "claude" "$claude_prompt" 120 "$claude_output" &
+    call_ai_with_context "claude" "$claude_prompt" 120 "$claude_output" &
     local claude_pid=$!
-    call_ai "gemini" "$gemini_prompt" 180 "$gemini_output" &
+    call_ai_with_context "gemini" "$gemini_prompt" 180 "$gemini_output" &
     local gemini_pid=$!
-    call_ai "amp" "$amp_prompt" 120 "$amp_output" &
+    call_ai_with_context "amp" "$amp_prompt" 120 "$amp_output" &
     local amp_pid=$!
 
     # Wait for all strategic layer AIs
@@ -163,9 +163,9 @@ $plan
 重要: ファイルは $PROJECT_ROOT/examples/eva_tetris.py に存在します。"
 
     # Launch implementation layer in parallel
-    call_ai "qwen" "$qwen_prompt" 240 "$qwen_output" &
+    call_ai_with_context "qwen" "$qwen_prompt" 240 "$qwen_output" &
     local qwen_pid=$!
-    call_ai "droid" "$droid_prompt" 900 "$droid_output" &  # 300→900秒: 実測で600秒でも大規模タスク失敗
+    call_ai_with_context "droid" "$droid_prompt" 900 "$droid_output" &  # 300→900秒: 実測で600秒でも大規模タスク失敗
     local droid_pid=$!
 
     # Wait for both implementations
@@ -199,7 +199,7 @@ $droid_impl
 4. パフォーマンス問題
 5. 最終実装への推奨事項"
 
-    call_ai "codex" "$codex_prompt" 240 "$codex_output"
+    call_ai_with_context "codex" "$codex_prompt" 240 "$codex_output"
 
     local review=""
     [ -f "$codex_output" ] && review=$(cat "$codex_output")
@@ -270,7 +270,7 @@ EOF
 
 重要: 効率的な処理のため、上記要約を参考にしながら、必要に応じてreference_guide.txtの詳細ファイルを参照してください。"
 
-    call_ai "cursor" "$cursor_prompt" 900 "$cursor_output"
+    call_ai_with_context "cursor" "$cursor_prompt" 900 "$cursor_output"
 
     # Display results
     echo ""
@@ -605,17 +605,17 @@ $codex_results
 
     # Launch all 6 AIs in parallel
     log_info "Launching 6 AI analyses in parallel..."
-    call_ai "claude" "$claude_prompt" 300 "$claude_output" &
+    call_ai_with_context "claude" "$claude_prompt" 300 "$claude_output" &
     local claude_pid=$!
-    call_ai "gemini" "$gemini_prompt" 300 "$gemini_output" &
+    call_ai_with_context "gemini" "$gemini_prompt" 300 "$gemini_output" &
     local gemini_pid=$!
-    call_ai "amp" "$amp_prompt" 600 "$amp_output" &
+    call_ai_with_context "amp" "$amp_prompt" 600 "$amp_output" &
     local amp_pid=$!
-    call_ai "qwen" "$qwen_prompt" 300 "$qwen_output" &
+    call_ai_with_context "qwen" "$qwen_prompt" 300 "$qwen_output" &
     local qwen_pid=$!
-    call_ai "droid" "$droid_prompt" 900 "$droid_output" &
+    call_ai_with_context "droid" "$droid_prompt" 900 "$droid_output" &
     local droid_pid=$!
-    call_ai "cursor" "$cursor_prompt" 600 "$cursor_output" &
+    call_ai_with_context "cursor" "$cursor_prompt" 600 "$cursor_output" &
     local cursor_pid=$!
 
     # Wait for all analyses (with error tolerance)
@@ -947,17 +947,17 @@ $coderabbit_results
 
     # Launch all 6 AIs in parallel
     log_info "Launching 6 AI analyses in parallel..."
-    call_ai "claude" "$claude_prompt" 300 "$claude_output" &
+    call_ai_with_context "claude" "$claude_prompt" 300 "$claude_output" &
     local claude_pid=$!
-    call_ai "gemini" "$gemini_prompt" 300 "$gemini_output" &
+    call_ai_with_context "gemini" "$gemini_prompt" 300 "$gemini_output" &
     local gemini_pid=$!
-    call_ai "amp" "$amp_prompt" 600 "$amp_output" &
+    call_ai_with_context "amp" "$amp_prompt" 600 "$amp_output" &
     local amp_pid=$!
-    call_ai "qwen" "$qwen_prompt" 300 "$qwen_output" &
+    call_ai_with_context "qwen" "$qwen_prompt" 300 "$qwen_output" &
     local qwen_pid=$!
-    call_ai "droid" "$droid_prompt" 900 "$droid_output" &
+    call_ai_with_context "droid" "$droid_prompt" 900 "$droid_output" &
     local droid_pid=$!
-    call_ai "cursor" "$cursor_prompt" 600 "$cursor_output" &
+    call_ai_with_context "cursor" "$cursor_prompt" 600 "$cursor_output" &
     local cursor_pid=$!
 
     # Wait for all analyses (with error tolerance)
@@ -1328,23 +1328,23 @@ Focus: code readability, documentation gaps, developer workflow"
     # Launch 5 AI analyses in parallel (Droid excluded due to timeout issues)
     log_info "Launching 5 AI analyses in parallel (with dual review context)..."
 
-    call_ai "claude" "$claude_prompt" "$claude_timeout" "$claude_output" &
+    call_ai_with_context "claude" "$claude_prompt" "$claude_timeout" "$claude_output" &
     local claude_pid=$!
 
-    call_ai "gemini" "$gemini_prompt" "$gemini_timeout" "$gemini_output" &
+    call_ai_with_context "gemini" "$gemini_prompt" "$gemini_timeout" "$gemini_output" &
     local gemini_pid=$!
 
-    call_ai "amp" "$amp_prompt" "$amp_timeout" "$amp_output" &
+    call_ai_with_context "amp" "$amp_prompt" "$amp_timeout" "$amp_output" &
     local amp_pid=$!
 
-    call_ai "qwen" "$qwen_prompt" "$qwen_timeout" "$qwen_output" &
+    call_ai_with_context "qwen" "$qwen_prompt" "$qwen_timeout" "$qwen_output" &
     local qwen_pid=$!
 
     # DISABLED: Droid excluded (consistent timeout >900s)
-    # call_ai "droid" "$droid_prompt" "$droid_timeout" "$droid_output" &
+    # call_ai_with_context "droid" "$droid_prompt" "$droid_timeout" "$droid_output" &
     # local droid_pid=$!
 
-    call_ai "cursor" "$cursor_prompt" "$cursor_timeout" "$cursor_output" &
+    call_ai_with_context "cursor" "$cursor_prompt" "$cursor_timeout" "$cursor_output" &
     local cursor_pid=$!
 
     # Wait for all analyses (with error tolerance)
