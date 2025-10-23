@@ -721,6 +721,81 @@ tdd_workflows:
       context: "Technical excellence + PM completion + Integration review"
       timeout: 600
 
+# File-Based Prompt System Configuration (Phase 1-4)
+# Enables automatic file-based routing for large prompts (>1KB)
+file_based_prompts:
+  enabled: true
+  version: "1.0"
+
+  # Size thresholds for automatic file routing
+  thresholds:
+    small: 1024          # 1KB - Use command-line arguments
+    medium: 102400       # 100KB - Use stdin file redirect
+    large: 1048576       # 1MB - Maximum workflow prompt size
+
+  # Routing strategy
+  routing:
+    auto: true           # Automatically choose best method
+    prefer_file: true    # Prefer file-based for >1KB prompts
+    fallback: "truncate" # Fallback strategy: "truncate" | "fail" | "split"
+
+  # Security settings
+  security:
+    file_permissions: "600"  # chmod 600 (owner read/write only)
+    auto_cleanup: true       # Automatically delete temp files on exit
+    cleanup_signal_handlers: ["EXIT", "INT", "TERM"]
+    secure_temp_dir: true    # Use mktemp with secure defaults
+
+  # Performance optimization
+  performance:
+    cache_small_prompts: false    # Don't cache <1KB prompts
+    compression: false            # Don't compress (adds overhead)
+    buffer_size: 8192             # Read buffer size (bytes)
+
+  # AI-specific file support configuration
+  ai_support:
+    claude:
+      stdin_redirect: true        # Supports < file.txt
+      max_file_size: 1048576      # 1MB
+      preferred_method: "stdin"
+
+    gemini:
+      stdin_redirect: true
+      max_file_size: 1048576
+      preferred_method: "stdin"
+
+    amp:
+      stdin_redirect: true
+      max_file_size: 1048576
+      preferred_method: "stdin"
+
+    qwen:
+      stdin_redirect: true
+      max_file_size: 1048576
+      preferred_method: "stdin"
+
+    droid:
+      stdin_redirect: true
+      max_file_size: 1048576
+      preferred_method: "stdin"
+
+    codex:
+      stdin_redirect: true
+      max_file_size: 1048576
+      preferred_method: "stdin"
+
+    cursor:
+      stdin_redirect: true
+      max_file_size: 1048576
+      preferred_method: "stdin"
+
+  # VibeLogger integration
+  logging:
+    enabled: true
+    log_file_usage: true          # Log when file mode is used
+    log_prompt_size: true         # Log prompt sizes
+    log_performance_metrics: true # Log file I/O performance
+
 # Migration notes from 5AI to Multi-AI
 migration:
   from: "5ai-profiles.yaml v2.0"
@@ -732,12 +807,15 @@ migration:
     - "Codex role enhanced: Implementation → Review & Optimization"
     - "Parallel Qwen+Droid implementation pattern"
     - "Added TDD workflows configuration section (v3.1)"
+    - "Added file-based prompt system configuration (v3.2)"
   performance_improvements:
     - "Speed: Qwen 37s (5x faster than Droid)"
     - "Quality: Droid 84pt vs Qwen 94pt (complementary)"
     - "Success rate: 88% → 98% (redundancy)"
     - "Development speed: +300% (fast prototyping)"
+    - "Prompt handling: Support for >100KB prompts via file system"
   references:
     - "output/qwen-vs-droid/02_公平な比較_最終版.md"
     - "output/5ai-multi-ai-debate/00_synthesis_report.md"
     - "TDD_Multi-AI_INTEGRATION_PLAN.md"
+    - "tests/phase1-file-based-prompt-test.sh"

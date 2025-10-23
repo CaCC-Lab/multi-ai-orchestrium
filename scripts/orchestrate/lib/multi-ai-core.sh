@@ -253,15 +253,11 @@ sanitize_input_for_file() {
     # No length limit - files handle large content safely
 
     # Only block truly dangerous patterns:
-    # - Null bytes (file system attacks)
+    # - Null bytes (file system attacks) - NOTE: Bash cannot preserve null bytes in strings
+    #   They are automatically truncated, so explicit checking is unnecessary
     # - Path traversal patterns
-    # Check for null bytes using a different method
-    if printf '%s' "$input" | tr -d '\0' | diff -q - <(printf '%s' "$input") >/dev/null 2>&1; then
-        : # No null bytes, continue
-    else
-        log_error "Null byte detected in input"
-        return 1
-    fi
+    # Null byte check removed: Bash strings cannot contain null bytes - they're truncated
+    # at the first \0, so if the string reached this function, it doesn't have embedded nulls
 
     if [[ "$input" =~ \.\./\.\. ]] || [[ "$input" =~ /etc/passwd ]] || [[ "$input" =~ /bin/sh ]]; then
         log_error "Path traversal pattern detected in input"

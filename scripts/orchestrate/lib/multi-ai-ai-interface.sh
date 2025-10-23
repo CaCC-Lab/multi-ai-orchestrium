@@ -318,8 +318,8 @@ call_ai_with_context() {
                 timeout "$timeout" "$wrapper_script" --prompt-file "$prompt_file" ${output_file:+> "$output_file"} 2>&1
                 exit_code=$?
             else
-                # Fallback to stdin redirect
-                timeout "$timeout" "$wrapper_script" ${output_file:+> "$output_file"} < "$prompt_file" 2>&1
+                # Fallback to stdin redirect with --stdin flag for explicit handling
+                timeout "$timeout" "$wrapper_script" --stdin ${output_file:+> "$output_file"} < "$prompt_file" 2>&1
                 exit_code=$?
             fi
         else

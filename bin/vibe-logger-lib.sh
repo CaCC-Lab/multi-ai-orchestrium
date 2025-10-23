@@ -349,6 +349,136 @@ EOF
 }
 
 # ============================================================================
+# File-Based Prompt System Helper Functions (Phase 4.4)
+# ============================================================================
+
+# Log file-based prompt routing decision
+# Usage: vibe_file_prompt_start <ai_name> <prompt_size> <threshold> <mode>
+vibe_file_prompt_start() {
+    local ai_name="$1"
+    local prompt_size="$2"
+    local threshold="$3"
+    local mode="$4"  # "file" | "command-line"
+
+    local metadata
+    metadata=$(cat << EOF
+{
+  "ai_name": "$ai_name",
+  "prompt_size": $prompt_size,
+  "threshold": $threshold,
+  "routing_mode": "$mode",
+  "timestamp": "$(date +%s)"
+}
+EOF
+)
+
+    vibe_log "file_prompt.start" "prompt_routing" "$metadata" \
+        "ファイルベースプロンプト開始: $ai_name ($prompt_size bytes, mode: $mode)" \
+        "create_temp_file,set_permissions,route_input" \
+        "File-Prompt-System"
+}
+
+# Log file-based prompt completion
+# Usage: vibe_file_prompt_done <ai_name> <prompt_size> <mode> <duration_ms> <exit_code>
+vibe_file_prompt_done() {
+    local ai_name="$1"
+    local prompt_size="$2"
+    local mode="$3"
+    local duration="$4"
+    local exit_code="$5"
+
+    local metadata
+    metadata=$(cat << EOF
+{
+  "ai_name": "$ai_name",
+  "prompt_size": $prompt_size,
+  "routing_mode": "$mode",
+  "duration_ms": $duration,
+  "exit_code": $exit_code
+}
+EOF
+)
+
+    vibe_log "file_prompt.done" "prompt_routing" "$metadata" \
+        "ファイルベースプロンプト完了: $ai_name ($prompt_size bytes, exit: $exit_code)" \
+        "cleanup_temp_file,analyze_performance,log_metrics" \
+        "File-Prompt-System"
+}
+
+# Log file creation event
+# Usage: vibe_file_created <ai_name> <file_path> <file_size>
+vibe_file_created() {
+    local ai_name="$1"
+    local file_path="$2"
+    local file_size="$3"
+
+    local metadata
+    metadata=$(cat << EOF
+{
+  "ai_name": "$ai_name",
+  "file_path": "$file_path",
+  "file_size": $file_size,
+  "permissions": "600"
+}
+EOF
+)
+
+    vibe_log "file_prompt.created" "temp_file_creation" "$metadata" \
+        "一時ファイル作成: $file_path ($file_size bytes)" \
+        "validate_permissions,track_file,schedule_cleanup" \
+        "File-Prompt-System"
+}
+
+# Log file cleanup event
+# Usage: vibe_file_cleanup <ai_name> <file_path> <success>
+vibe_file_cleanup() {
+    local ai_name="$1"
+    local file_path="$2"
+    local success="$3"  # "success" | "failed"
+
+    local metadata
+    metadata=$(cat << EOF
+{
+  "ai_name": "$ai_name",
+  "file_path": "$file_path",
+  "cleanup_status": "$success"
+}
+EOF
+)
+
+    vibe_log "file_prompt.cleanup" "temp_file_cleanup" "$metadata" \
+        "一時ファイルクリーンアップ: $file_path ($success)" \
+        "verify_deletion,update_metrics" \
+        "File-Prompt-System"
+}
+
+# Log prompt size threshold analysis
+# Usage: vibe_prompt_size_analysis <ai_name> <prompt_size> <threshold> <decision>
+vibe_prompt_size_analysis() {
+    local ai_name="$1"
+    local prompt_size="$2"
+    local threshold="$3"
+    local decision="$4"  # "use_file" | "use_command_line"
+
+    local metadata
+    metadata=$(cat << EOF
+{
+  "ai_name": "$ai_name",
+  "prompt_size": $prompt_size,
+  "threshold": $threshold,
+  "decision": "$decision",
+  "size_ratio": $(echo "scale=2; $prompt_size / $threshold" | bc)
+}
+EOF
+)
+
+    vibe_log "file_prompt.size_analysis" "routing_decision" "$metadata" \
+        "プロンプトサイズ分析: $ai_name ($prompt_size bytes, 閾値: $threshold bytes)" \
+        "analyze_size,make_routing_decision,optimize_performance" \
+        "File-Prompt-System"
+}
+
+# ============================================================================
 # Library Initialization Check
 # ============================================================================
 
@@ -365,6 +495,11 @@ export -f vibe_tdd_cycle_start
 export -f vibe_tdd_cycle_done
 export -f vibe_pipeline_start
 export -f vibe_pipeline_done
+export -f vibe_file_prompt_start
+export -f vibe_file_prompt_done
+export -f vibe_file_created
+export -f vibe_file_cleanup
+export -f vibe_prompt_size_analysis
 
 # Mark library as loaded
 export VIBELOGGER_LIB_LOADED=1

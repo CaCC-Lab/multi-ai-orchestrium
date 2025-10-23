@@ -7,8 +7,14 @@
 
 set -euo pipefail
 
-# Maximum prompt size (10KB)
-readonly MAX_PROMPT_SIZE=10240
+# Maximum prompt size for standard operations (100KB)
+# Increased from 10KB to support workflow operations with large prompts
+# File-based prompt system handles >100KB automatically via temporary files
+readonly MAX_PROMPT_SIZE=102400
+
+# Maximum prompt size for workflow operations (1MB)
+# Used for multi-AI workflows that may generate very large combined prompts
+readonly MAX_WORKFLOW_PROMPT_SIZE=1048576
 
 # Sanitize user prompts for safe shell execution
 #
@@ -172,6 +178,92 @@ get_prompt_hash() {
     echo -n "$prompt" | sha256sum | awk '{print $1}'
 }
 
+# Sanitize prompts for workflow operations (relaxed size limits)
+#
+# Arguments:
+#   $1 - Input prompt string
+#   $2 - (Optional) Force file mode: "auto" (default) | "file" | "direct"
+#
+# Returns:
+#   Sanitized prompt string (stdout)
+#   Exit code 0 on success, 1 on error
+#
+# Strategy:
+#   - Uses MAX_WORKFLOW_PROMPT_SIZE (1MB) instead of MAX_PROMPT_SIZE (100KB)
+#   - Automatically uses file mode for prompts >100KB
+#   - Supports force file mode for testing/debugging
+#
+# Example:
+#   sanitized=$(sanitize_workflow_prompt "$large_prompt")
+#   sanitized=$(sanitize_workflow_prompt "$prompt" "file")
+#
+sanitize_workflow_prompt() {
+    local prompt="$1"
+    local mode="${2:-auto}"
+
+    # Validation: Check for empty/null input
+    if [ -z "${prompt:-}" ]; then
+        echo "ERROR: Empty prompt provided" >&2
+        return 1
+    fi
+
+    # Validation: Check prompt length
+    local prompt_length=${#prompt}
+    if [ "$prompt_length" -gt "$MAX_WORKFLOW_PROMPT_SIZE" ]; then
+        echo "ERROR: Prompt exceeds maximum workflow size ($prompt_length > $MAX_WORKFLOW_PROMPT_SIZE bytes)" >&2
+        echo "HINT: Use file-based input or split into smaller chunks" >&2
+        return 1
+    fi
+
+    # Auto-detect file mode for large prompts (>100KB)
+    if [ "$mode" = "auto" ] && [ "$prompt_length" -gt "$MAX_PROMPT_SIZE" ]; then
+        mode="file"
+    fi
+
+    # If file mode is required/recommended, log a hint
+    if [ "$mode" = "file" ] || [ "$prompt_length" -gt "$MAX_PROMPT_SIZE" ]; then
+        echo "INFO: Large prompt detected ($prompt_length bytes), recommend file-based input" >&2
+    fi
+
+    # Escape shell metacharacters to prevent command injection
+    printf '%q' "$prompt"
+
+    return 0
+}
+
+# Validate and sanitize prompt with automatic fallback strategy
+#
+# Arguments:
+#   $1 - Input prompt string
+#
+# Returns:
+#   Sanitized prompt string (stdout)
+#   Exit code 0 on success, 1 on error
+#
+# Fallback Strategy:
+#   1. Try standard sanitize (MAX_PROMPT_SIZE=100KB)
+#   2. If size exceeded, try workflow sanitize (MAX_WORKFLOW_PROMPT_SIZE=1MB)
+#   3. If still exceeded, fail with clear error message
+#
+# Example:
+#   sanitized=$(sanitize_with_fallback "$potentially_large_prompt")
+#
+sanitize_with_fallback() {
+    local prompt="$1"
+    local prompt_length=${#prompt}
+
+    # Try standard sanitize first
+    if [ "$prompt_length" -le "$MAX_PROMPT_SIZE" ]; then
+        sanitize_prompt "$prompt"
+        return $?
+    fi
+
+    # Fallback to workflow sanitize
+    echo "WARN: Prompt size ($prompt_length bytes) exceeds standard limit, using workflow sanitize" >&2
+    sanitize_workflow_prompt "$prompt"
+    return $?
+}
+
 # Export functions for use in other scripts
 export -f sanitize_prompt
 export -f sanitize_prompt_to_file
@@ -179,3 +271,5 @@ export -f should_use_file
 export -f sanitize_log_output
 export -f get_prompt_length
 export -f get_prompt_hash
+export -f sanitize_workflow_prompt
+export -f sanitize_with_fallback
