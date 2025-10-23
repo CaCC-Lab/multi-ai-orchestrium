@@ -101,96 +101,25 @@ check-multi-ai-tools() {
 # AI Invocation Functions (2 functions)
 # ============================================================================
 
-# Unified AI call wrapper (standardized AI invocation with AGENTS.md integration)
+# Unified AI call wrapper (backward compatibility layer)
+# Phase 1.3 Update: Now uses call_ai_with_context() internally
+# This function maintains backward compatibility with existing code
 call_ai() {
     local ai=$1
     local prompt=$2
-    local timeout=$3
-    local output_file=$4
+    local timeout=${3:-300}
+    local output_file=${4:-}
 
     # Availability check
     check_ai_with_details "$ai" || return 1
 
-    log_info "[$ai] Starting (AGENTS.md auto-classification enabled)..."
-
-    # Determine wrapper script path
-    local wrapper_script="$PROJECT_ROOT/bin/${ai}-wrapper.sh"
-
-    # FORCE DIRECT CLI: Bypass wrappers to respect our timeout settings
-    # Wrappers have internal timeout logic that conflicts with our extended timeouts
-    if true; then  # Force fallback to direct CLI (was: ! -f "$wrapper_script")
-        log_warning "[$ai] Wrapper not found at $wrapper_script, falling back to direct CLI"
-        # Fallback to original direct CLI invocation
-        local prompt_file="/tmp/7ai-prompt-$$-$RANDOM.txt"
-
-        # SECURITY: Sanitize prompt before writing to file (Issue #3)
-        local sanitized_prompt
-        if ! sanitized_prompt=$(sanitize_input "$prompt"); then
-            log_error "[$ai] Prompt sanitization failed"
-            return 1
-        fi
-
-        # Use sanitized prompt for file creation
-        echo "$sanitized_prompt" > "$prompt_file"
-
-        case $ai in
-            gemini)
-                timeout "$timeout" bash -c "gemini -p \"\$(cat '$prompt_file')\" -y" > "$output_file" 2>&1
-                ;;
-            qwen)
-                timeout "$timeout" bash -c "qwen -p \"\$(cat '$prompt_file')\" -y" > "$output_file" 2>&1
-                ;;
-            codex)
-                timeout "$timeout" bash -c "codex exec \"\$(cat '$prompt_file')\"" > "$output_file" 2>&1
-                ;;
-            cursor)
-                timeout "$timeout" bash -c "cursor-agent -p \"\$(cat '$prompt_file')\" --print" > "$output_file" 2>&1
-                ;;
-            amp)
-                timeout "$timeout" bash -c "amp -x \"\$(cat '$prompt_file')\"" > "$output_file" 2>&1
-                ;;
-            droid)
-                timeout "$timeout" bash -c "droid exec --auto high \"\$(cat '$prompt_file')\"" > "$output_file" 2>&1
-                ;;
-            claude)
-                echo "Claude (CTO) Task:" > "$output_file"
-                echo "" >> "$output_file"
-                echo "$prompt" >> "$output_file"
-                echo "" >> "$output_file"
-                echo "Note: This is a placeholder. Claude Code should execute this task interactively." >> "$output_file"
-                ;;
-            *)
-                log_error "Unknown AI: $ai"
-                rm -f "$prompt_file"
-                return 1
-                ;;
-        esac
-        local exit_code=$?
-        rm -f "$prompt_file"
-    else
-        # Use wrapper script with AGENTS.md integration
-        # Wrappers handle timeout internally based on task classification
-
-        # SECURITY: Sanitize prompt before passing to wrapper (Issue #3)
-        local sanitized_prompt
-        if ! sanitized_prompt=$(sanitize_input "$prompt"); then
-            log_error "[$ai] Prompt sanitization failed"
-            return 1
-        fi
-
-        "$wrapper_script" --prompt "$sanitized_prompt" > "$output_file" 2>&1
-        local exit_code=$?
-    fi
-
-    if [ $exit_code -eq 0 ]; then
-        log_success "[$ai] Complete"
-    elif [ $exit_code -eq 124 ]; then
-        log_error "[$ai] Timed out"
-    else
-        log_error "[$ai] Failed (exit code: $exit_code)"
-    fi
-
-    return $exit_code
+    # Delegate to new context-aware function
+    # This automatically handles:
+    # - Size-based routing (command-line vs file-based)
+    # - Secure temporary file creation
+    # - Automatic cleanup
+    # - Fallback mechanisms
+    call_ai_with_context "$ai" "$prompt" "$timeout" "$output_file"
 }
 
 # AI failure fallback mechanism
@@ -207,4 +136,223 @@ call_ai_with_fallback() {
 
     log_warning "[$primary_ai] failed, falling back to [$fallback_ai]"
     call_ai "$fallback_ai" "$prompt" "$timeout" "$output_file"
+}
+
+# ============================================================================
+# File-Based Prompt System (Phase 1.1 - Core Functions)
+# Purpose: Handle large prompts (>1KB) via secure temporary files
+# Added: 2025-10-23 - File-Based Prompt System Implementation
+# ============================================================================
+
+# Check if AI tool supports file-based input
+#
+# Arguments:
+#   $1 - AI name (claude, gemini, qwen, codex, cursor, amp, droid)
+#
+# Returns:
+#   0 - Supports file input (--file or --input flag)
+#   1 - Does not support, fallback to stdin redirect
+#
+# Usage:
+#   if supports_file_input "claude"; then
+#       claude-mcp --file "$prompt_file"
+#   else
+#       claude-mcp < "$prompt_file"
+#   fi
+#
+supports_file_input() {
+    local ai_name="$1"
+
+    case "$ai_name" in
+        claude)
+            # Claude MCP supports file input
+            return 0
+            ;;
+        codex)
+            # Codex CLI supports --input flag
+            return 0
+            ;;
+        gemini|droid)
+            # Supports stdin redirect
+            return 0
+            ;;
+        qwen|cursor|amp)
+            # Need verification - fallback to stdin for safety
+            return 1
+            ;;
+        *)
+            log_warning "Unknown AI: $ai_name, assuming stdin support"
+            return 1
+            ;;
+    esac
+}
+
+# Create secure temporary file for prompt
+#
+# Arguments:
+#   $1 - AI name (for debugging/logging)
+#   $2 - Prompt content
+#
+# Returns:
+#   stdout - Path to created file
+#   exit 0 on success, 1 on failure
+#
+# Security:
+#   - chmod 600 (owner read/write only)
+#   - mktemp for unique filename
+#   - AI name in filename for debugging
+#
+# Usage:
+#   prompt_file=$(create_secure_prompt_file "claude" "$large_prompt")
+#
+create_secure_prompt_file() {
+    local ai_name="$1"
+    local content="$2"
+
+    # Create temporary file with AI name for debugging
+    local prompt_file
+    prompt_file=$(mktemp "${TMPDIR:-/tmp}/prompt-${ai_name}-XXXXXX") || {
+        log_error "Failed to create temporary file for $ai_name"
+        return 1
+    }
+
+    # Set secure permissions (owner read/write only)
+    chmod 600 "$prompt_file" || {
+        log_error "Failed to set permissions on $prompt_file"
+        rm -f "$prompt_file"
+        return 1
+    }
+
+    # Write content to file
+    echo "$content" > "$prompt_file" || {
+        log_error "Failed to write content to $prompt_file"
+        rm -f "$prompt_file"
+        return 1
+    }
+
+    # Output file path for caller
+    echo "$prompt_file"
+    return 0
+}
+
+# Clean up temporary prompt file
+#
+# Arguments:
+#   $1 - Path to file to delete
+#
+# Returns:
+#   0 on success, 1 on failure (non-critical)
+#
+# Usage:
+#   cleanup_prompt_file "$prompt_file"
+#
+cleanup_prompt_file() {
+    local prompt_file="$1"
+
+    if [ -z "$prompt_file" ]; then
+        return 0
+    fi
+
+    if [ -f "$prompt_file" ]; then
+        rm -f "$prompt_file" 2>/dev/null || {
+            log_warning "Failed to delete temporary file: $prompt_file"
+            return 1
+        }
+    fi
+
+    return 0
+}
+
+# Call AI with automatic context-aware routing
+#
+# This is the main function that automatically chooses between:
+#   - Command-line arguments (for prompts < 1KB)
+#   - File-based input (for prompts >= 1KB)
+#
+# Arguments:
+#   $1 - AI name
+#   $2 - Prompt/context
+#   $3 - Timeout (optional, default: 300)
+#   $4 - Output file (optional)
+#
+# Returns:
+#   Exit code from AI execution
+#
+# Features:
+#   - Automatic size detection (1KB threshold)
+#   - Secure temporary file handling
+#   - Automatic cleanup via trap
+#   - Fallback to command-line on file creation failure
+#   - VibeLogger integration for routing decisions
+#
+# Usage:
+#   call_ai_with_context "claude" "$large_prompt" 600 "/tmp/output.txt"
+#
+call_ai_with_context() {
+    local ai_name="$1"
+    local context="$2"
+    local timeout="${3:-300}"
+    local output_file="${4:-}"
+    local context_size=${#context}
+    local exit_code=0
+
+    # Size threshold: 1KB (1024 bytes)
+    local size_threshold=1024
+
+    # Decision: Use file-based input for large prompts
+    if [ "$context_size" -gt "$size_threshold" ]; then
+        log_info "[$ai_name] Large prompt detected (${context_size}B > ${size_threshold}B), using file-based input"
+
+        # Create secure temporary file
+        local prompt_file
+        if ! prompt_file=$(create_secure_prompt_file "$ai_name" "$context"); then
+            log_error "[$ai_name] File creation failed, falling back to truncated command-line"
+            # Fallback: Truncate and use command-line
+            local truncated="${context:0:$size_threshold}"
+            call_ai "$ai_name" "$truncated" "$timeout" "$output_file"
+            return $?
+        fi
+
+        # Set up automatic cleanup
+        # shellcheck disable=SC2064
+        trap "cleanup_prompt_file '$prompt_file'" EXIT INT TERM
+
+        # Determine input method based on AI support
+        local wrapper_script="$PROJECT_ROOT/bin/${ai_name}-wrapper.sh"
+
+        if [ -f "$wrapper_script" ]; then
+            log_info "[$ai_name] Using wrapper with file input"
+
+            if supports_file_input "$ai_name"; then
+                # Use --prompt-file if supported
+                timeout "$timeout" "$wrapper_script" --prompt-file "$prompt_file" ${output_file:+> "$output_file"} 2>&1
+                exit_code=$?
+            else
+                # Fallback to stdin redirect
+                timeout "$timeout" "$wrapper_script" ${output_file:+> "$output_file"} < "$prompt_file" 2>&1
+                exit_code=$?
+            fi
+        else
+            log_warning "[$ai_name] Wrapper not found, using direct CLI with stdin"
+            timeout "$timeout" "$ai_name" ${output_file:+> "$output_file"} < "$prompt_file" 2>&1
+            exit_code=$?
+        fi
+
+        # Clean up temporary file
+        cleanup_prompt_file "$prompt_file"
+        trap - EXIT INT TERM
+
+        # Log routing decision for metrics
+        if [ -n "${VIBE_LOGGER_ENABLED:-}" ]; then
+            # VibeLogger integration (if available)
+            log_info "[$ai_name] File-based routing: size=${context_size}B, exit_code=$exit_code"
+        fi
+
+        return $exit_code
+    else
+        # Small prompt: Use existing command-line argument method
+        log_info "[$ai_name] Small prompt (${context_size}B), using command-line arguments"
+        call_ai "$ai_name" "$context" "$timeout" "$output_file"
+        return $?
+    fi
 }

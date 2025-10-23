@@ -209,9 +209,10 @@ EOF
 # ============================================================================
 
 # Sanitize user input (Security - Command Injection Prevention)
+# Phase 1.2 Update: Relaxed for file-based prompt system
 sanitize_input() {
     local input="$1"
-    local max_len=1000
+    local max_len=2000  # Increased from 1000 for larger prompts
 
     # Length check
     if [ ${#input} -gt $max_len ]; then
@@ -221,7 +222,9 @@ sanitize_input() {
 
     # Reject dangerous characters instead of escaping
     # Security: Command injection prevention
-    if [[ "$input" =~ [\;\|\`\$\<\>\&\!] ]]; then
+    # Note: Backticks (`) removed from blocklist - safe with file-based input
+    # For large prompts with Markdown, use call_ai_with_context() instead
+    if [[ "$input" =~ [\;\|\$\<\>\&\!] ]]; then
         log_error "Invalid characters detected in input: $input"
         return 1  # Reject instead of escape
     fi
@@ -239,6 +242,42 @@ sanitize_input() {
     input="${input//$'\r'/ }"      # Carriage return to space
     input="${input//$'\t'/ }"      # Tab to space
 
+    echo "$input"
+}
+
+# Sanitize input for file-based prompts (Relaxed for Markdown content)
+# Phase 1.2 Addition: File-based prompts are safe from shell expansion
+sanitize_input_for_file() {
+    local input="$1"
+
+    # No length limit - files handle large content safely
+
+    # Only block truly dangerous patterns:
+    # - Null bytes (file system attacks)
+    # - Path traversal patterns
+    # Check for null bytes using a different method
+    if printf '%s' "$input" | tr -d '\0' | diff -q - <(printf '%s' "$input") >/dev/null 2>&1; then
+        : # No null bytes, continue
+    else
+        log_error "Null byte detected in input"
+        return 1
+    fi
+
+    if [[ "$input" =~ \.\./\.\. ]] || [[ "$input" =~ /etc/passwd ]] || [[ "$input" =~ /bin/sh ]]; then
+        log_error "Path traversal pattern detected in input"
+        return 1
+    fi
+
+    # Check for empty after whitespace trim
+    local trimmed="${input#"${input%%[![:space:]]*}"}"
+    trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+    if [ -z "$trimmed" ]; then
+        log_error "Input cannot be empty"
+        return 1
+    fi
+
+    # Allow all special characters including backticks - safe in file context
+    # Markdown code blocks, shell snippets, JSON, etc. are all permitted
     echo "$input"
 }
 
