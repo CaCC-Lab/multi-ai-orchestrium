@@ -208,7 +208,8 @@ DELIVERABLES:
     echo "    This will take 5-10 minutes with real AI calls"
 
     set +e
-    multi-ai-chatdev-develop "$prompt_content" > "$TEST_OUTPUT_DIR/chatdev-10kb-result.log" 2>&1
+    # Enable non-interactive mode to auto-approve critical tasks in test environment
+    WRAPPER_NON_INTERACTIVE=1 multi-ai-chatdev-develop "$prompt_content" > "$TEST_OUTPUT_DIR/chatdev-10kb-result.log" 2>&1
     local chatdev_exit=$?
     set -e
 
@@ -308,7 +309,8 @@ Production deployment requires YAML configuration, wrapper script installation, 
     echo "    This will take 10-15 minutes with real AI calls"
 
     set +e
-    multi-ai-coa-analyze "$document_content" > "$TEST_OUTPUT_DIR/coa-50kb-result.log" 2>&1
+    # Enable non-interactive mode to auto-approve critical tasks in test environment
+    WRAPPER_NON_INTERACTIVE=1 multi-ai-coa-analyze "$document_content" > "$TEST_OUTPUT_DIR/coa-50kb-result.log" 2>&1
     local coa_exit=$?
     set -e
 
@@ -408,7 +410,8 @@ REFACTORING REQUIREMENTS:
     echo "    This will take 15-20 minutes with real AI calls"
 
     set +e
-    multi-ai-5ai-orchestrate "$context_content" > "$TEST_OUTPUT_DIR/5ai-100kb-result.log" 2>&1
+    # Enable non-interactive mode to auto-approve critical tasks in test environment
+    WRAPPER_NON_INTERACTIVE=1 multi-ai-5ai-orchestrate "$context_content" > "$TEST_OUTPUT_DIR/5ai-100kb-result.log" 2>&1
     local fiveai_exit=$?
     set -e
 
