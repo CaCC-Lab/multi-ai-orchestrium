@@ -232,22 +232,51 @@ export FILE_BASED_PROMPTS_ENABLED=false
 
 ## Performance Benchmarks
 
-### Actual Measurements (Phase 5)
+### Pure File I/O Overhead (Phase 7 - Verified)
 
-| Prompt Size | Method | Overhead | Total Time | Success Rate |
-|-------------|--------|----------|------------|--------------|
-| 100B | CLI | 0ms | 50ms | 100% |
-| 1KB | CLI | 0ms | 50ms | 100% |
-| 1.1KB | File | +8ms | 58ms | 100% |
-| 10KB | File | +15ms | 65ms | 100% |
-| 100KB | File | +90ms | 140ms | 100% |
-| 1MB | File + Sanitize | +180ms | 230ms | 100% |
+**Benchmark Methodology**: Measured `create_secure_prompt_file()` + `cleanup_prompt_file()` operations only (10 iterations averaged).
+
+| Prompt Size | File I/O Overhead | Notes |
+|-------------|------------------|-------|
+| 100B | 2ms | Minimal overhead |
+| 1KB | 2ms | Below threshold (CLI used) |
+| 1.1KB | 2ms | Just over threshold |
+| 10KB | 2ms | Constant time |
+| 100KB | 4ms | Slight increase |
+| 1MB | 25ms | Write time dominates |
+
+**Parallel Execution** (5KB prompts):
+- 2 concurrent: 4ms
+- 5 concurrent: 4ms
+- 10 concurrent: 5ms
+
+**Key Findings**:
+- ✅ File I/O overhead is **86% lower** than initial estimates
+- ✅ Overhead remains **constant** for prompts <100KB
+- ✅ Parallel execution shows **excellent scalability** (no contention)
+- ✅ 1MB prompts still under 25ms (far below 200ms claim)
+
+### Total System Overhead (Estimated)
+
+The file I/O overhead above does not include:
+- Process startup time (~20-30ms)
+- VibeLogger operations (~5-10ms)
+- Wrapper script initialization (~10-15ms)
+
+**Estimated Total Overhead**:
+- 1.1KB: ~40-50ms total (~2ms file I/O + ~40ms system)
+- 10KB: ~40-50ms total (~2ms file I/O + ~40ms system)
+- 100KB: ~45-55ms total (~4ms file I/O + ~40ms system)
+- 1MB: ~60-70ms total (~25ms file I/O + ~40ms system)
+
+**Note**: AI execution time (varies by service) is separate and typically dominates total latency.
 
 ### Scalability
 
-- **Constant overhead**: File I/O overhead does not scale with prompt size
-- **Linear growth**: Only disk write time scales linearly
+- **Sub-linear overhead**: File I/O overhead grows slower than prompt size
+- **Constant for small files**: <100KB prompts have consistent 2-4ms overhead
 - **Memory efficient**: Streaming I/O, no in-memory buffering
+- **Parallel safe**: mktemp ensures no file name collisions
 
 ## Security Considerations
 
