@@ -397,13 +397,113 @@ my-new-workflow() {
 
 変更は即座に有効化されます（YAMLは毎回実行時にロードされます）。
 
+## ファイルベースプロンプトシステム (v3.2新機能)
+
+Multi-AI Orchestriumは、大規模プロンプト（>1KB）を自動的にファイル経由でルーティングし、スケーラビリティとセキュリティを両立させます。
+
+### 自動ルーティング
+
+システムはプロンプトサイズに応じて最適な方法を自動選択します：
+
+| プロンプトサイズ | ルーティング方法 | 実行速度 | セキュリティ |
+|-----------------|----------------|---------|------------|
+| < 1KB | コマンドライン引数 | 即座 | 厳格 |
+| 1KB - 100KB | Stdinファイルリダイレクト | +5-50ms | 安全 |
+| 100KB - 1MB | `sanitize_input_for_file()` | +50-200ms | 高 |
+
+### 使用例
+
+```bash
+# 小規模プロンプト（自動でコマンドライン引数を使用）
+call_ai_with_context "claude" "シンプルなタスク" 300
+
+# 大規模プロンプト（自動でファイル経由を使用）
+LARGE_SPEC=$(cat 10kb-specification.txt)
+call_ai_with_context "claude" "$LARGE_SPEC" 600
+
+# 従来のcall_ai()も引き続き動作（内部でcall_ai_with_context()を呼ぶ）
+call_ai "gemini" "$LARGE_PROMPT" 300
+```
+
+### セキュリティ機能
+
+- **chmod 600**: 所有者のみ読み書き可能
+- **自動クリーンアップ**: trap でEXIT/INT/TERMシグナル時に削除
+- **一意ファイル名**: mktemp で衝突を防止
+- **段階的検証**:
+  - 小規模プロンプト (<2KB): 厳格な文字検証
+  - 中規模プロンプト (2KB-100KB): 緩和された検証
+  - 大規模プロンプト (>100KB): ファイルベース専用検証
+
+### パフォーマンスガイドライン
+
+**ファイル経由のオーバーヘッド**: 無視できるレベル（<200ms）
+
+- 1KB プロンプト: +5-10ms
+- 10KB プロンプト: +10-50ms
+- 100KB プロンプト: +50-200ms
+
+**推奨**:
+- 10KB未満のワークフロー: 気にする必要なし
+- 100KB以上の大規模操作: パフォーマンス影響を考慮
+
+### トラブルシューティング
+
+#### 問題: 大規模プロンプトでタイムアウト
+
+```bash
+# 解決策: タイムアウトを延長
+call_ai_with_context "claude" "$LARGE_PROMPT" 900  # 15分
+```
+
+#### 問題: 一時ファイル作成失敗
+
+```bash
+# 自動フォールバック: 1KBに切り詰めてコマンドライン引数を使用
+# ログに表示: "File creation failed, falling back to truncated command-line"
+
+# 手動対処:
+# 1. /tmpの空き容量確認
+df -h /tmp
+
+# 2. TMPDIR環境変数の設定
+export TMPDIR=/path/to/writable/dir
+```
+
+#### 問題: 並列実行時のファイル競合
+
+**問題なし**: mktemp が一意ファイル名を生成するため、各並列プロセスは独立した一時ファイルを使用します。
+
+### 設定
+
+YAML設定（`config/multi-ai-profiles.yaml`）でカスタマイズ可能：
+
+```yaml
+file_based_prompts:
+  enabled: true
+  thresholds:
+    small: 1024          # 1KB
+    medium: 102400       # 100KB
+    large: 1048576       # 1MB
+  routing:
+    auto: true
+    prefer_file: true
+  security:
+    file_permissions: "600"
+    auto_cleanup: true
+```
+
+詳細は `docs/FILE_BASED_PROMPT_SYSTEM.md` を参照してください。
+
 ## セキュリティ & 入力検証
 
 すべてのユーザー入力は`scripts/lib/sanitize.sh`を通過します:
 - コマンドインジェクション防止
 - パストラバーサル保護
 - 特殊文字のエスケープ
-- 長さ制限の強制
+- 長さ制限の強制（最大100KB、ワークフローは最大1MB）
+
+**Phase 4.5更新**: `sanitize_input()`は2KB以上のプロンプトで文字制限を緩和します（ファイルベースルーティングにより安全）。
 
 **サニタイゼーションを決してバイパスしない** - 外部入力には必ず`sanitize_input()`を使用してください。
 

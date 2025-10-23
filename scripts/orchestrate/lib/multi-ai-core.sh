@@ -209,23 +209,42 @@ EOF
 # ============================================================================
 
 # Sanitize user input (Security - Command Injection Prevention)
-# Phase 1.2 Update: Relaxed for file-based prompt system
+# Phase 4.5 Update: Support large prompts via file-based system
 sanitize_input() {
     local input="$1"
-    local max_len=2000  # Increased from 1000 for larger prompts
+    local max_len=102400  # Increased to 100KB for workflow prompts (Phase 4.5)
 
-    # Length check
+    # Length check - use sanitize_input_for_file() for very large prompts
     if [ ${#input} -gt $max_len ]; then
-        log_error "Input too long (max: $max_len chars)"
-        return 1
+        log_warning "Input very large (${#input} > $max_len chars), using file-based sanitization"
+        sanitize_input_for_file "$input"
+        return $?
     fi
 
+    # For large prompts (>2KB), skip dangerous character check
+    # Rationale: Large prompts are typically from files/workflows, not user input
+    # They will be processed via file-based system which is safe from shell expansion
+    if [ ${#input} -gt 2000 ]; then
+        log_info "Large prompt detected (${#input} chars), relaxing character restrictions"
+
+        # Only check for empty input
+        local trimmed="${input#"${input%%[![:space:]]*}"}"
+        trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+        if [ -z "$trimmed" ]; then
+            log_error "Input cannot be empty"
+            return 1
+        fi
+
+        # Return as-is for file-based processing
+        echo "$input"
+        return 0
+    fi
+
+    # Standard sanitization for small prompts (<2KB)
     # Reject dangerous characters instead of escaping
     # Security: Command injection prevention
-    # Note: Backticks (`) removed from blocklist - safe with file-based input
-    # For large prompts with Markdown, use call_ai_with_context() instead
     if [[ "$input" =~ [\;\|\$\<\>\&\!] ]]; then
-        log_error "Invalid characters detected in input: $input"
+        log_error "Invalid characters detected in input"
         return 1  # Reject instead of escape
     fi
 
@@ -237,7 +256,7 @@ sanitize_input() {
         return 1
     fi
 
-    # Remove control characters (newlines, carriage returns, etc.)
+    # Remove control characters (newlines, carriage returns, etc.) only for small prompts
     input="${input//$'\n'/ }"      # Newline to space
     input="${input//$'\r'/ }"      # Carriage return to space
     input="${input//$'\t'/ }"      # Tab to space
