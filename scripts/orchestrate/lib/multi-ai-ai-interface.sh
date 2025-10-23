@@ -315,17 +315,32 @@ call_ai_with_context() {
 
             if supports_file_input "$ai_name"; then
                 # Use --prompt-file if supported
-                timeout "$timeout" "$wrapper_script" --prompt-file "$prompt_file" ${output_file:+> "$output_file"} 2>&1
-                exit_code=$?
+                if [ -n "$output_file" ]; then
+                    timeout "$timeout" "$wrapper_script" --prompt-file "$prompt_file" > "$output_file" 2>&1
+                    exit_code=$?
+                else
+                    timeout "$timeout" "$wrapper_script" --prompt-file "$prompt_file" 2>&1
+                    exit_code=$?
+                fi
             else
                 # Fallback to stdin redirect with --stdin flag for explicit handling
-                timeout "$timeout" "$wrapper_script" --stdin ${output_file:+> "$output_file"} < "$prompt_file" 2>&1
-                exit_code=$?
+                if [ -n "$output_file" ]; then
+                    timeout "$timeout" "$wrapper_script" --stdin < "$prompt_file" > "$output_file" 2>&1
+                    exit_code=$?
+                else
+                    timeout "$timeout" "$wrapper_script" --stdin < "$prompt_file" 2>&1
+                    exit_code=$?
+                fi
             fi
         else
             log_warning "[$ai_name] Wrapper not found, using direct CLI with stdin"
-            timeout "$timeout" "$ai_name" ${output_file:+> "$output_file"} < "$prompt_file" 2>&1
-            exit_code=$?
+            if [ -n "$output_file" ]; then
+                timeout "$timeout" "$ai_name" < "$prompt_file" > "$output_file" 2>&1
+                exit_code=$?
+            else
+                timeout "$timeout" "$ai_name" < "$prompt_file" 2>&1
+                exit_code=$?
+            fi
         fi
 
         # Clean up temporary file
