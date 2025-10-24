@@ -488,6 +488,27 @@ is_url() {
   [[ "$1" =~ ^https?:// ]]
 }
 
+# parse_yaml(file_path, section)
+# Parses a simple YAML file and returns key-value pairs for a given section
+#
+# Arguments:
+#   $1 - YAML file path
+#   $2 - Section name (e.g., "npm_tools")
+# Outputs: Key-value pairs, one per line (e.g., "key: value")
+parse_yaml() {
+  local file="$1"
+  local section="$2"
+
+  if [[ ! -f "$file" ]]; then
+    return 1
+  fi
+
+  # Extract section content, excluding both section headers and next section start
+  sed -n "/^${section}:/,/^[a-zA-Z_][a-zA-Z0-9_]*:/{/^${section}:/d;/^[a-zA-Z_][a-zA-Z0-9_]*:/d;p}" "$file" | \
+    grep -v "^$" | \
+    sed 's/^[[:space:]]*//'
+}
+
 # ============================================================
 # Module Information
 # ============================================================

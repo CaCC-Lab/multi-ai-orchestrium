@@ -13,6 +13,7 @@
 # Source dependencies
 _MODULE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${_MODULE_DIR}/interfaces.sh" 2>/dev/null || true
+source "${_MODULE_DIR}/../utils/helpers.sh" 2>/dev/null || true
 
 # ============================================================
 # Configuration File Locations
@@ -88,6 +89,45 @@ find_config_file() {
 }
 
 # ============================================================
+# Tool Profile Loading
+# ============================================================
+
+# config_load_tool_profiles()
+# Loads tool profiles from the YAML configuration file
+#
+# Returns: 0 on success, 1 on failure
+# Side effects: Populates NPM_TOOLS and CLI_TOOLS arrays
+config_load_tool_profiles() {
+  local profiles_file="${_MODULE_DIR}/../config/multi-ai-profiles.yaml"
+
+  if [[ ! -f "$profiles_file" ]]; then
+    log_warn "Tool profiles file not found: $profiles_file"
+    return 1
+  fi
+
+  # Load NPM tools
+  while IFS=: read -r key value; do
+    local tool_name
+    local package_name
+    tool_name=$(trim "$key")
+    package_name=$(trim "$value")
+    NPM_TOOLS["$tool_name"]="$package_name"
+  done < <(parse_yaml "$profiles_file" "npm_tools")
+
+  # Load CLI tools
+  while IFS=: read -r key value; do
+    local tool_name
+    local command_name
+    tool_name=$(trim "$key")
+    command_name=$(trim "$value")
+    CLI_TOOLS["$tool_name"]="$command_name"
+  done < <(parse_yaml "$profiles_file" "cli_tools")
+
+  log_info "Tool profiles loaded successfully"
+  return 0
+}
+
+# ============================================================
 # Configuration Loading
 # ============================================================
 
@@ -103,6 +143,8 @@ find_config_file() {
 #   config_load
 #   config_load "/custom/path/config.json"
 config_load() {
+  config_load_tool_profiles
+
   local custom_path="${1:-}"
 
   # Find config file
