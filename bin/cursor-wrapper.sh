@@ -3,28 +3,44 @@ set -euo pipefail
 # cursor-wrapper.sh - MCP wrapper for Cursor Agent CLI
 # 既定は安全に `cursor-agent --print "<task>"` を実行
 
-# Load AGENTS.md task classification utilities (portable path resolution)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -f "$SCRIPT_DIR/agents-utils.sh" ]]; then
-    source "$SCRIPT_DIR/agents-utils.sh"
-    AGENTS_ENABLED=true
-else
-    AGENTS_ENABLED=false
-fi
+# ============================================================================
+# AI-Specific Configuration
+# ============================================================================
 
-# Load VibeLogger library
-if [[ -f "$SCRIPT_DIR/vibe-logger-lib.sh" ]]; then
-    source "$SCRIPT_DIR/vibe-logger-lib.sh"
-else
-    echo "WARNING: VibeLogger library not found, logging disabled" >&2
-fi
+# AI name for logging and classification
+AI_NAME="Cursor"
+
+# Cursor CLI command (dynamic model argument handled in run_cursor)
+AI_COMMAND=("cursor-agent" "--print")
 
 # AGENTS.md統合: タスク分類により動的調整（軽量: 30s, 標準: 60s, 重要: 180s）
 # - デフォルト: 60秒（1分） - 標準実行に最適
 # - 根拠: AGENTS.md標準設定に準拠
 # - 上書き: export CURSOR_MCP_TIMEOUT=600s（10分に延長可能）
 # - 参照: CURSOR_TIMEOUT_INVESTIGATION_REPORT.md
-TIMEOUT="${CURSOR_MCP_TIMEOUT:-60s}"
+BASE_TIMEOUT="${CURSOR_MCP_TIMEOUT:-60}"
+
+# ============================================================================
+# Load Common Wrapper Library
+# ============================================================================
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ ! -f "$SCRIPT_DIR/common-wrapper-lib.sh" ]]; then
+    echo "ERROR: common-wrapper-lib.sh not found in $SCRIPT_DIR" >&2
+    exit 1
+fi
+
+source "$SCRIPT_DIR/common-wrapper-lib.sh"
+
+# ============================================================================
+# Initialize Dependencies
+# ============================================================================
+
+wrapper_load_dependencies
+
+# ============================================================================
+# Help Text
+# ============================================================================
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   cat <<'USAGE'
@@ -43,36 +59,35 @@ Options:
   --raw ARGS...       : pass-through to cursor-agent (expert)
 
 Env:
-  CURSOR_MCP_TIMEOUT  : e.g. 600s (default 60s), customizable timeout
+  CURSOR_MCP_TIMEOUT      : e.g. 600s (default 60s), customizable timeout
+  CURSOR_DEFAULT_MODEL    : e.g. sonnet-4.5 (default), model selection
 USAGE
   exit 0
 fi
 
-PROMPT=""
-NON_INTERACTIVE=false
-WORKSPACE=""
-RAW=()
+# ============================================================================
+# Argument Parsing
+# ============================================================================
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --prompt)          shift; PROMPT="${1:-}";;
-    --stdin)           : ;;
-    --non-interactive) NON_INTERACTIVE=true;;
-    --workspace)       shift; WORKSPACE="${1:-}";;
-    --raw)             shift; RAW+=("$@"); break;;
-    *)                 RAW+=("$1");;
-  esac
-  shift || true
-done
+wrapper_parse_args "$@"
+
+# ============================================================================
+# Workspace Setup
+# ============================================================================
 
 if [[ -n "$WORKSPACE" ]]; then
-  cd "$WORKSPACE"
+    cd "$WORKSPACE"
 fi
+
+# ============================================================================
+# Cursor-Specific Execution Logic
+# ============================================================================
 
 run_cursor() {
   local prompt="$1"
-  local final_timeout="$TIMEOUT"
-  local start_time=$(get_timestamp_ms 2>/dev/null || echo "$(date +%s)000")
+  local final_timeout="${BASE_TIMEOUT}s"
+  local start_time
+  start_time=$(get_timestamp_ms 2>/dev/null || echo "$(date +%s)000")
 
   # VibeLogger: Wrapper execution start
   if command -v vibe_wrapper_start >/dev/null 2>&1; then
@@ -92,118 +107,65 @@ run_cursor() {
     process_label=$(get_process_label "$classification")
     echo "[$process_label] Timeout: $final_timeout" >&2
 
-    # Check approval requirement
-    if requires_approval "$classification"; then
-      echo "⚠️  CRITICAL TASK: Approval recommended before execution" >&2
-      echo "Prompt: $prompt" >&2
-
-      # Determine if running in non-interactive mode
-      local is_non_interactive=false
-
-      # 1. Environment variable override
-      if [[ "${WRAPPER_NON_INTERACTIVE:-}" == "1" ]]; then
-        is_non_interactive=true
-      fi
-
-      # 2. Auto-detect CI/MCP environment (no TTY on stdin and stderr)
-      # Disabled: Only use explicit settings to allow piped input
-      # if [[ ! -t 1 ]] && [[ ! -t 2 ]]; then
-      #   is_non_interactive=true
-      # fi
-
-      # 3. Check --non-interactive flag
-      if [[ "$NON_INTERACTIVE" == "true" ]]; then
-        is_non_interactive=true
-      fi
-
-      if [[ "$is_non_interactive" == "true" ]]; then
-        echo "⚠️  Running in non-interactive mode - CRITICAL task auto-approved" >&2
-        echo "⚠️  Set WRAPPER_NON_INTERACTIVE=0 to require manual confirmation" >&2
-      else
-        read -p "Continue? [y/N] " -n 1 -r >&2
-        echo >&2
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-          echo "Execution cancelled by user" >&2
-
-          # VibeLogger: Log user cancellation
-          if command -v vibe_wrapper_done >/dev/null 2>&1; then
-            local end_time=$(get_timestamp_ms 2>/dev/null || echo "$(date +%s)000")
-            local duration=$((end_time - start_time))
-            vibe_wrapper_done "Cursor" "cancelled" "$duration" "1"
-          fi
-
-          exit 1
-        fi
-      fi
-    fi
+    # Check approval requirement using common function
+    wrapper_check_approval "$classification" "$prompt" "Cursor" "$start_time" || exit 1
   fi
 
   # Cursor timeout対策: デフォルトモデル明示的指定（CURSOR_TIMEOUT_INVESTIGATION_REPORT.md参照）
-  DEFAULT_MODEL="${CURSOR_DEFAULT_MODEL:-sonnet-4.5}"
+  local default_model="${CURSOR_DEFAULT_MODEL:-sonnet-4.5}"
 
   # VibeLogger: Log model selection
   if command -v vibe_log >/dev/null 2>&1; then
     vibe_log "wrapper.config" "cursor_model_select" \
-      "{\"model\": \"$DEFAULT_MODEL\"}" \
-      "Cursorモデル選択: $DEFAULT_MODEL" \
+      "{\"model\": \"$default_model\"}" \
+      "Cursorモデル選択: $default_model" \
       "validate_model,execute_request" \
       "Cursor"
   fi
 
   # VibeLogger: Wrapper execution done (before exec)
-  local end_time=$(get_timestamp_ms 2>/dev/null || echo "$(date +%s)000")
+  local end_time
+  end_time=$(get_timestamp_ms 2>/dev/null || echo "$(date +%s)000")
   local duration=$((end_time - start_time))
 
   if command -v vibe_wrapper_done >/dev/null 2>&1; then
     vibe_wrapper_done "Cursor" "success" "$duration" "0"
   fi
 
-  # Timeout strategy: Use outer timeout when called from workflow, inner timeout for standalone execution
-  if [[ "${WRAPPER_SKIP_TIMEOUT:-}" == "1" ]]; then
-    # Called from workflow (multi-ai-ai-interface.sh) - outer timeout manages execution
-    # Use exec to replace wrapper process with AI command so timeout works correctly
-    exec cursor-agent --model "$DEFAULT_MODEL" --print "$prompt"
-  else
-    # Standalone execution - use wrapper-defined timeout from AGENTS.md classification
-    if command -v timeout >/dev/null 2>&1; then
-      timeout_arg="$final_timeout"
-      if command -v to_seconds >/dev/null 2>&1; then
-        timeout_arg="$(to_seconds "$final_timeout")"
-      fi
-      exec timeout "$timeout_arg" cursor-agent --model "$DEFAULT_MODEL" --print "$prompt"
-    else
-      exec cursor-agent --model "$DEFAULT_MODEL" --print "$prompt"
-    fi
-  fi
+  # Build full command with model argument
+  local full_command=("cursor-agent" "--model" "$default_model" "--print" "$prompt")
+
+  # Apply timeout using common function
+  wrapper_apply_timeout "$final_timeout" "${full_command[@]}"
 }
 
+# ============================================================================
+# Main Execution
+# ============================================================================
+
+# Handle --raw arguments (pass-through to cursor-agent with default model)
 if [[ ${#RAW[@]} -gt 0 ]]; then
-  # Cursor timeout対策: デフォルトモデル明示的指定（CURSOR_TIMEOUT_INVESTIGATION_REPORT.md参照）
-  DEFAULT_MODEL="${CURSOR_DEFAULT_MODEL:-sonnet-4.5}"
-  # Respect WRAPPER_SKIP_TIMEOUT for consistency with other execution paths
-  if [[ "${WRAPPER_SKIP_TIMEOUT:-}" == "1" ]]; then
-    # Called from workflow - outer timeout manages execution
-    exec cursor-agent --model "$DEFAULT_MODEL" "${RAW[@]}"
-  else
-    if command -v timeout >/dev/null 2>&1; then
-      timeout_arg="$TIMEOUT"
-      if command -v to_seconds >/dev/null 2>&1; then
-        timeout_arg="$(to_seconds "$TIMEOUT")"
-      fi
-      exec timeout "$timeout_arg" cursor-agent --model "$DEFAULT_MODEL" "${RAW[@]}"
-    else
-      exec cursor-agent --model "$DEFAULT_MODEL" "${RAW[@]}"
+    # Cursor timeout対策: デフォルトモデル明示的指定
+    DEFAULT_MODEL="${CURSOR_DEFAULT_MODEL:-sonnet-4.5}"
+
+    # Update AI_COMMAND with model
+    AI_COMMAND=("cursor-agent" "--model" "$DEFAULT_MODEL")
+
+    if wrapper_handle_raw_args; then
+        exit 0
     fi
-  fi
 fi
 
-if [[ -n "$PROMPT" ]]; then
-  run_cursor "$PROMPT"
+# Handle stdin input
+if wrapper_handle_stdin; then
+    PROMPT="$INPUT"
 fi
 
-read -r -d '' INPUT || true
-if [[ -z "${INPUT//[$'\t\r\n ']/}" ]]; then
-  echo "No input provided (stdin empty and no --prompt)" >&2
-  exit 1
+# Validate we have a prompt
+if [[ -z "$PROMPT" ]]; then
+    echo "No input provided (stdin empty and no --prompt)" >&2
+    exit 1
 fi
-run_cursor "$INPUT"
+
+# Run Cursor with model-aware logic
+run_cursor "$PROMPT"

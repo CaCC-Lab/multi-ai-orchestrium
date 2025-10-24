@@ -291,20 +291,38 @@ wrapper_run_ai() {
 # 7. wrapper_handle_raw_args()
 # ============================================================================
 # Purpose: Handle --raw arguments (pass-through mode)
-# Args:
-#   $1 - AI name
-#   $2 - Timeout value
-#   $3+ - Complete command array (AI command + RAW args)
-# Returns: Does not return (uses exec)
+# Args: None (uses global RAW, AI_COMMAND, BASE_TIMEOUT)
+# Returns:
+#   - 0 if RAW args were handled (script should exit after this)
+#   - 1 if no RAW args present (continue normal execution)
 
 wrapper_handle_raw_args() {
-  local ai_name="$1"
-  local timeout="$2"
-  shift 2
-  local full_command=("$@")
+  # Check if RAW array has content
+  if [[ ${#RAW[@]} -eq 0 ]]; then
+    return 1  # No raw args, continue normal execution
+  fi
+
+  # Verify AI_COMMAND is available
+  if [[ ${#AI_COMMAND[@]} -eq 0 ]] || ! command -v "${AI_COMMAND[0]}" >/dev/null 2>&1; then
+    echo "${AI_NAME:-AI} CLI not found (expected at '${AI_COMMAND[0]:-<unset>}')." >&2
+    exit 127
+  fi
+
+  # Build full command
+  local full_command=("${AI_COMMAND[@]}" "${RAW[@]}")
+
+  # Convert BASE_TIMEOUT to seconds if needed
+  local timeout_arg="$BASE_TIMEOUT"
+  if command -v to_seconds >/dev/null 2>&1; then
+    timeout_arg="$(to_seconds "$BASE_TIMEOUT")"
+  fi
 
   # Respect WRAPPER_SKIP_TIMEOUT for consistency with other execution paths
-  wrapper_apply_timeout "$timeout" "${full_command[@]}"
+  wrapper_apply_timeout "$timeout_arg" "${full_command[@]}"
+
+  # wrapper_apply_timeout uses exec, so we never reach here
+  # But return 0 for safety
+  return 0
 }
 
 # ============================================================================
