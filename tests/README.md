@@ -2,8 +2,8 @@
 
 **Version**: 3.2.0
 **Last Updated**: 2025-10-24
-**Test Coverage**: 53 bats unit tests + 66 legacy tests + 12 E2E tests + Performance benchmarks
-**Overall Pass Rate**: 98% (Unit: 98.1%, Phase 1: 100%, Phase 4: Partial)
+**Test Coverage**: 106 bats unit tests + 66 legacy tests + 12 E2E tests + Performance benchmarks
+**Overall Pass Rate**: 99.1% (Unit: 99.1% [105/106], Phase 1: 100%, Phase 4: Partial)
 
 ## Table of Contents
 
@@ -51,7 +51,9 @@ tests/
 ├── run-unit-tests.sh                   # Bats unit test runner (NEW)
 ├── unit/                               # Bats unit tests (NEW)
 │   ├── test-common-wrapper-lib.bats    # 20 tests for bin/common-wrapper-lib.sh
-│   └── test-multi-ai-core.bats         # 33 tests for scripts/orchestrate/lib/multi-ai-core.sh (NEW)
+│   ├── test-multi-ai-core.bats         # 33 tests for scripts/orchestrate/lib/multi-ai-core.sh
+│   ├── test-multi-ai-config.bats       # 31 tests for scripts/orchestrate/lib/multi-ai-config.sh
+│   └── test-multi-ai-ai-interface.bats # 22 tests for scripts/orchestrate/lib/multi-ai-ai-interface.sh (NEW)
 ├── helpers/                            # Test helpers (NEW)
 │   └── test_helper.bash                # Common setup/teardown
 ├── reports/                            # Test reports (NEW)
