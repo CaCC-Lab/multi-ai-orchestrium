@@ -2,8 +2,8 @@
 
 **Version**: 3.2.0
 **Last Updated**: 2025-10-24
-**Test Coverage**: 66 unit tests + 12 E2E tests + Performance benchmarks
-**Overall Pass Rate**: 98% (Phase 1: 100%, Phase 4: Partial)
+**Test Coverage**: 20 bats unit tests + 66 legacy tests + 12 E2E tests + Performance benchmarks
+**Overall Pass Rate**: 95% (Unit: 95%, Phase 1: 100%, Phase 4: Partial)
 
 ## Table of Contents
 
@@ -22,6 +22,9 @@
 ```bash
 # Navigate to project root
 cd /path/to/multi-ai-orchestrium
+
+# Run bats unit tests (NEW - fast, ~2 seconds)
+bash tests/run-unit-tests.sh
 
 # Run all Phase 1 unit tests (fast, ~30 seconds)
 bash tests/phase1-file-based-prompt-test.sh
@@ -45,7 +48,15 @@ bash tests/test_suite.sh
 ```
 tests/
 ├── README.md                           # This file
-├── phase1-file-based-prompt-test.sh    # Unit tests (66 tests, 43KB)
+├── run-unit-tests.sh                   # Bats unit test runner (NEW)
+├── unit/                               # Bats unit tests (NEW)
+│   └── test-common-wrapper-lib.bats    # 20 tests for common-wrapper-lib.sh
+├── helpers/                            # Test helpers (NEW)
+│   └── test_helper.bash                # Common setup/teardown
+├── reports/                            # Test reports (NEW)
+│   ├── unit-test-tap_*.tap             # TAP format results
+│   └── unit-test-report_*.txt
+├── phase1-file-based-prompt-test.sh    # Legacy unit tests (66 tests, 43KB)
 ├── phase1-integration-test.sh          # Integration tests (6.4KB)
 ├── phase4-e2e-test.sh                  # End-to-end tests (12 tests, 18KB)
 ├── performance-benchmark.sh            # Performance tests (4.2KB)
