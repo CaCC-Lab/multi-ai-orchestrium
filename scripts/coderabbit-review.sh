@@ -767,9 +767,13 @@ execute_alternative_review() {
     # ========================================
     # パフォーマンス修正: 文字列連結の代わりにgrepで直接カウント
     local additions_count
-    additions_count=$(echo "$diff_content" | grep -c "^+" 2>/dev/null || echo "0")
+    additions_count=$(echo "$diff_content" | grep -c "^+" 2>/dev/null | head -1 | tr -d '\n' || echo "0")
+    additions_count=${additions_count//[^0-9]/}
+    additions_count=${additions_count:-0}
     local deletions_count
-    deletions_count=$(echo "$diff_content" | grep -c "^-" 2>/dev/null || echo "0")
+    deletions_count=$(echo "$diff_content" | grep -c "^-" 2>/dev/null | head -1 | tr -d '\n' || echo "0")
+    deletions_count=${deletions_count//[^0-9]/}
+    deletions_count=${deletions_count:-0}
 
     # パターンマッチング用に追加行のみを抽出（メモリ効率的な方法）
     local additions
@@ -1125,8 +1129,10 @@ parse_coderabbit_output() {
             files_analyzed=0
         fi
 
-        # 総問題数: "Type:" エントリをカウント
-        total_issues=$(grep -c "^Type: " "$log_file" 2>/dev/null || echo "0")
+        # 総問題数: "Type:" エントリをカウント - 改行混入防止
+        total_issues=$(grep -c "^Type: " "$log_file" 2>/dev/null | head -1 | tr -d '\n' || echo "0")
+        total_issues=${total_issues//[^0-9]/}
+        total_issues=${total_issues:-0}
         if ! [[ "$total_issues" =~ ^[0-9]+$ ]]; then
             total_issues=0
         fi
@@ -1138,25 +1144,33 @@ parse_coderabbit_output() {
         # nitpick → Low
 
         # Type: potential_issue のカウント（Highとして扱う）
-        high_count=$(grep -c "^Type: potential_issue" "$log_file" 2>/dev/null || echo "0")
+        high_count=$(grep -c "^Type: potential_issue" "$log_file" 2>/dev/null | head -1 | tr -d '\n' || echo "0")
+        high_count=${high_count//[^0-9]/}
+        high_count=${high_count:-0}
         if ! [[ "$high_count" =~ ^[0-9]+$ ]]; then
             high_count=0
         fi
 
         # Type: refactor_suggestion のカウント（Mediumとして扱う）
-        medium_count=$(grep -c "^Type: refactor_suggestion" "$log_file" 2>/dev/null || echo "0")
+        medium_count=$(grep -c "^Type: refactor_suggestion" "$log_file" 2>/dev/null | head -1 | tr -d '\n' || echo "0")
+        medium_count=${medium_count//[^0-9]/}
+        medium_count=${medium_count:-0}
         if ! [[ "$medium_count" =~ ^[0-9]+$ ]]; then
             medium_count=0
         fi
 
         # Type: nitpick のカウント（Lowとして扱う）
-        low_count=$(grep -c "^Type: nitpick" "$log_file" 2>/dev/null || echo "0")
+        low_count=$(grep -c "^Type: nitpick" "$log_file" 2>/dev/null | head -1 | tr -d '\n' || echo "0")
+        low_count=${low_count//[^0-9]/}
+        low_count=${low_count:-0}
         if ! [[ "$low_count" =~ ^[0-9]+$ ]]; then
             low_count=0
         fi
 
         # Critical: コメント内容に "Critical" または "CRITICAL" または "🔴" が含まれる場合
-        critical_count=$(grep -A 20 "^Type: " "$log_file" | grep -icE "(Critical|CRITICAL|🔴|security.*vulnerab|injection|exploit)" || echo "0")
+        critical_count=$(grep -A 20 "^Type: " "$log_file" | grep -icE "(Critical|CRITICAL|🔴|security.*vulnerab|injection|exploit)" | head -1 | tr -d '\n' || echo "0")
+        critical_count=${critical_count//[^0-9]/}
+        critical_count=${critical_count:-0}
         if ! [[ "$critical_count" =~ ^[0-9]+$ ]]; then
             critical_count=0
         fi
@@ -1506,33 +1520,49 @@ parse_alternative_output() {
     # ========================================
     # 2. 代替実装出力パターン検出
     # ========================================
-    # 行数カウント
+    # 行数カウント - 改行混入防止のため sanitize
     local additions_count
-    additions_count=$(grep -oP "Lines Added:\s*\*\*\K\d+" "$log_file" 2>/dev/null || echo "0")
+    additions_count=$(grep -oP "Lines Added:\s*\*\*\K\d+" "$log_file" 2>/dev/null | head -1 | tr -d '\n' || echo "0")
+    additions_count=${additions_count//[^0-9]/}
+    additions_count=${additions_count:-0}
     if ! [[ "$additions_count" =~ ^[0-9]+$ ]]; then
         # フォールバック: diff内の + 行カウント
-        additions_count=$(grep -c "^+" "$log_file" 2>/dev/null || echo "0")
+        additions_count=$(grep -c "^+" "$log_file" 2>/dev/null | head -1 | tr -d '\n' || echo "0")
+        additions_count=${additions_count//[^0-9]/}
+        additions_count=${additions_count:-0}
     fi
 
     local deletions_count
-    deletions_count=$(grep -oP "Lines Removed:\s*\*\*\K\d+" "$log_file" 2>/dev/null || echo "0")
+    deletions_count=$(grep -oP "Lines Removed:\s*\*\*\K\d+" "$log_file" 2>/dev/null | head -1 | tr -d '\n' || echo "0")
+    deletions_count=${deletions_count//[^0-9]/}
+    deletions_count=${deletions_count:-0}
     if ! [[ "$deletions_count" =~ ^[0-9]+$ ]]; then
         # フォールバック: diff内の - 行カウント
-        deletions_count=$(grep -c "^-" "$log_file" 2>/dev/null || echo "0")
+        deletions_count=$(grep -c "^-" "$log_file" 2>/dev/null | head -1 | tr -d '\n' || echo "0")
+        deletions_count=${deletions_count//[^0-9]/}
+        deletions_count=${deletions_count:-0}
     fi
 
-    # 問題検出（絵文字パターン）
+    # 問題検出（絵文字パターン）- 改行混入防止のため sanitize
     local critical_count
-    critical_count=$(grep -c "🔴" "$log_file" 2>/dev/null || echo "0")
+    critical_count=$(grep -c "🔴" "$log_file" 2>/dev/null | head -1 | tr -d '\n' || echo "0")
+    critical_count=${critical_count//[^0-9]/}  # 数値以外を削除
+    critical_count=${critical_count:-0}  # 空の場合は0
 
     local high_count
-    high_count=$(grep -c "🟠" "$log_file" 2>/dev/null || echo "0")
+    high_count=$(grep -c "🟠" "$log_file" 2>/dev/null | head -1 | tr -d '\n' || echo "0")
+    high_count=${high_count//[^0-9]/}
+    high_count=${high_count:-0}
 
     local medium_count
-    medium_count=$(grep -c "🟡" "$log_file" 2>/dev/null || echo "0")
+    medium_count=$(grep -c "🟡" "$log_file" 2>/dev/null | head -1 | tr -d '\n' || echo "0")
+    medium_count=${medium_count//[^0-9]/}
+    medium_count=${medium_count:-0}
 
     local low_count
-    low_count=$(grep -c "🟢" "$log_file" 2>/dev/null || echo "0")
+    low_count=$(grep -c "🟢" "$log_file" 2>/dev/null | head -1 | tr -d '\n' || echo "0")
+    low_count=${low_count//[^0-9]/}
+    low_count=${low_count:-0}
 
     local total_issues=$((critical_count + high_count + medium_count + low_count))
 
