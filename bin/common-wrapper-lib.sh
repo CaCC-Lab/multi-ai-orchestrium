@@ -346,6 +346,320 @@ wrapper_handle_stdin() {
 }
 
 # ============================================================================
+# 9. sanitize_wrapper_input()
+# ============================================================================
+# Purpose: Sanitize input for AI wrappers with size-aware validation
+# Args:
+#   $1 - Input text to sanitize
+# Returns: 0 on success, 1 on validation failure
+# Outputs: Sanitized text to stdout
+# Validation rules:
+#   - 1-1024B: Strict character validation (CLI arguments)
+#   - 1KB-100KB: Relaxed validation (file-based prompts)
+#   - Uses printf '%q' for shell-safe quoting
+
+sanitize_wrapper_input() {
+  local input="$1"
+  local input_size=${#input}
+
+  # Check for empty input
+  if [[ -z "$input" ]]; then
+    echo "ERROR: Empty input provided" >&2
+    return 1
+  fi
+
+  # Size-aware validation
+  if [[ $input_size -lt 1024 ]]; then
+    # Small prompts (<1KB): Strict validation for CLI arguments
+    # Check for dangerous patterns (escape special regex chars)
+    if [[ "$input" =~ \$\(|\`|\;|\||\>|\<|\&|\! ]]; then
+      echo "ERROR: Dangerous characters detected in input (<1KB, CLI mode)" >&2
+      return 1
+    fi
+    # Shell-safe quoting
+    printf '%q' "$input"
+  elif [[ $input_size -lt 102400 ]]; then
+    # Medium prompts (1KB-100KB): Relaxed validation for file-based
+    # Only check for command injection patterns (don't escape spaces in regex)
+    if [[ "$input" =~ (\$\(|eval |exec |system |shell |bash -c ) ]]; then
+      echo "ERROR: Command injection patterns detected in input (1KB-100KB)" >&2
+      return 1
+    fi
+    # Output as-is (will be written to file with 600 permissions)
+    echo "$input"
+  else
+    # Large prompts (>100KB): File-only, minimal validation
+    # Basic sanity check only
+    echo "$input"
+  fi
+
+  return 0
+}
+
+# ============================================================================
+# 10. handle_wrapper_timeout()
+# ============================================================================
+# Purpose: Handle timeout events with graceful termination
+# Args:
+#   $1 - Process PID to timeout
+#   $2 - Timeout duration in seconds
+# Returns: 124 on timeout, 0 on success, process exit code otherwise
+# Side effects: Sends SIGTERM → wait 5s → SIGKILL to process
+
+handle_wrapper_timeout() {
+  local pid="$1"
+  local timeout_sec="$2"
+  local elapsed=0
+
+  # Monitor process until timeout or completion
+  while kill -0 "$pid" 2>/dev/null; do
+    if [[ $elapsed -ge $timeout_sec ]]; then
+      echo "TIMEOUT: Process $pid exceeded ${timeout_sec}s limit" >&2
+
+      # Graceful termination sequence
+      echo "Sending SIGTERM to $pid..." >&2
+      kill -TERM "$pid" 2>/dev/null || true
+
+      # Wait 5 seconds for graceful shutdown
+      local grace_period=5
+      local grace_elapsed=0
+      while kill -0 "$pid" 2>/dev/null && [[ $grace_elapsed -lt $grace_period ]]; do
+        sleep 1
+        ((grace_elapsed++))
+      done
+
+      # Force kill if still alive
+      if kill -0 "$pid" 2>/dev/null; then
+        echo "Process $pid did not terminate gracefully, sending SIGKILL..." >&2
+        kill -KILL "$pid" 2>/dev/null || true
+      fi
+
+      return 124  # timeout exit code
+    fi
+
+    sleep 1
+    ((elapsed++))
+  done
+
+  # Process completed before timeout
+  wait "$pid"
+  return $?
+}
+
+# ============================================================================
+# 11. format_wrapper_output()
+# ============================================================================
+# Purpose: Format wrapper output in standardized formats
+# Args:
+#   $1 - Output format ("json" or "text")
+#   $2 - AI name
+#   $3 - Status ("success", "error", "timeout", "cancelled")
+#   $4 - Exit code
+#   $5 - Duration in milliseconds
+#   $6 - Output text (optional)
+# Returns: None
+# Outputs: Formatted output to stdout
+
+format_wrapper_output() {
+  local format="$1"
+  local ai_name="$2"
+  local status="$3"
+  local exit_code="$4"
+  local duration_ms="$5"
+  local output="${6:-}"
+
+  if [[ "$format" == "json" ]]; then
+    # JSON format output
+    cat <<EOF
+{
+  "ai": "$ai_name",
+  "status": "$status",
+  "exit_code": $exit_code,
+  "duration_ms": $duration_ms,
+  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "output": $(echo "$output" | jq -Rs .)
+}
+EOF
+  else
+    # Plain text format (default)
+    echo "=== $ai_name Wrapper Result ===" >&2
+    echo "Status: $status" >&2
+    echo "Exit Code: $exit_code" >&2
+    echo "Duration: ${duration_ms}ms" >&2
+    if [[ -n "$output" ]]; then
+      echo "--- Output ---" >&2
+      echo "$output"
+    fi
+  fi
+}
+
+# ============================================================================
+# 12. vibe_wrapper_error()
+# ============================================================================
+# Purpose: Log wrapper error events to VibeLogger
+# Args:
+#   $1 - AI name
+#   $2 - Error message
+#   $3 - Duration in milliseconds
+#   $4 - Exit code
+# Returns: None
+# Side effects: Writes to VibeLogger logs
+
+vibe_wrapper_error() {
+  if command -v vibe_log >/dev/null 2>&1; then
+    local ai_name="$1"
+    local error_msg="$2"
+    local duration_ms="$3"
+    local exit_code="$4"
+
+    vibe_log "wrapper" "error" \
+      "{\"ai\":\"$ai_name\",\"duration_ms\":$duration_ms,\"exit_code\":$exit_code}" \
+      "Wrapper error: $error_msg" \
+      "" \
+      "wrapper"
+  fi
+}
+
+# ============================================================================
+# 13. Error Code Definitions
+# ============================================================================
+# Standardized exit codes for wrapper scripts (1-255)
+
+# Success
+readonly WRAPPER_EXIT_SUCCESS=0
+
+# General errors (1-10)
+readonly WRAPPER_EXIT_GENERAL_ERROR=1
+readonly WRAPPER_EXIT_INVALID_ARGS=2
+readonly WRAPPER_EXIT_MISSING_DEPENDENCY=3
+readonly WRAPPER_EXIT_PERMISSION_DENIED=4
+
+# Input validation errors (11-20)
+readonly WRAPPER_EXIT_EMPTY_INPUT=11
+readonly WRAPPER_EXIT_INVALID_INPUT=12
+readonly WRAPPER_EXIT_INPUT_TOO_LARGE=13
+readonly WRAPPER_EXIT_SANITIZATION_FAILED=14
+
+# AI execution errors (21-40)
+readonly WRAPPER_EXIT_AI_NOT_FOUND=21
+readonly WRAPPER_EXIT_AI_EXECUTION_FAILED=22
+readonly WRAPPER_EXIT_AI_TIMEOUT=124  # Standard timeout exit code
+readonly WRAPPER_EXIT_AI_CANCELLED=130  # Standard SIGINT (Ctrl+C)
+
+# Configuration errors (41-50)
+readonly WRAPPER_EXIT_CONFIG_ERROR=41
+readonly WRAPPER_EXIT_WORKSPACE_ERROR=42
+readonly WRAPPER_EXIT_LOG_ERROR=43
+
+# System errors (51-60)
+readonly WRAPPER_EXIT_FILE_ERROR=51
+readonly WRAPPER_EXIT_NETWORK_ERROR=52
+readonly WRAPPER_EXIT_RESOURCE_EXHAUSTED=53
+
+# ============================================================================
+# 14. wrapper_structured_error()
+# ============================================================================
+# Purpose: Output structured error message following what/why/how pattern
+# Args:
+#   $1 - Error code (use WRAPPER_EXIT_* constants)
+#   $2 - What happened (description of the error)
+#   $3 - Why it happened (root cause)
+#   $4 - How to fix (actionable solution)
+#   $5 - AI name (optional, for logging)
+# Returns: The provided error code
+# Outputs: Structured error message to stderr
+# Side effects: Logs to VibeLogger if available
+
+wrapper_structured_error() {
+  local error_code="$1"
+  local what="$2"
+  local why="$3"
+  local how="$4"
+  local ai_name="${5:-wrapper}"
+
+  # Output structured error to stderr
+  cat >&2 <<ERROR_MSG
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚨 ERROR [Exit Code: $error_code]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+❌ What happened:
+   $what
+
+🔍 Why it happened:
+   $why
+
+✅ How to fix:
+   $how
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ERROR_MSG
+
+  # Log to VibeLogger if available
+  if command -v vibe_wrapper_error >/dev/null 2>&1; then
+    local start_time=$(get_timestamp_ms 2>/dev/null || echo "$(date +%s)000")
+    vibe_wrapper_error "$ai_name" "[$error_code] $what | WHY: $why | HOW: $how" "$start_time" "$error_code"
+  fi
+
+  return "$error_code"
+}
+
+# ============================================================================
+# 15. wrapper_print_stack_trace()
+# ============================================================================
+# Purpose: Print bash stack trace for debugging wrapper errors
+# Args: None (uses bash BASH_SOURCE, BASH_LINENO, FUNCNAME arrays)
+# Returns: 0 always
+# Outputs: Stack trace to stderr
+# Usage: Call from error handlers to show execution context
+
+wrapper_print_stack_trace() {
+  local frame=0
+
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
+  echo "📚 Stack Trace:" >&2
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
+
+  while true; do
+    local func="${FUNCNAME[$frame]:-}"
+    local line="${BASH_LINENO[$((frame - 1))]:-}"
+    local src="${BASH_SOURCE[$frame]:-}"
+
+    # Stop when we reach the end of the stack
+    if [[ -z "$func" ]]; then
+      break
+    fi
+
+    # Skip wrapper_print_stack_trace itself
+    if [[ "$func" == "wrapper_print_stack_trace" ]]; then
+      ((frame++))
+      continue
+    fi
+
+    # Format output
+    local src_basename=$(basename "$src" 2>/dev/null || echo "$src")
+
+    if [[ $frame -eq 1 ]]; then
+      echo "  → $func() at $src_basename:$line  [error origin]" >&2
+    else
+      echo "  → $func() at $src_basename:$line" >&2
+    fi
+
+    ((frame++))
+
+    # Safety limit: max 20 frames
+    if [[ $frame -gt 20 ]]; then
+      echo "  ... (truncated, max 20 frames shown)" >&2
+      break
+    fi
+  done
+
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
+
+  return 0
+}
+
+# ============================================================================
 # Library Initialization Complete
 # ============================================================================
 # This library is now ready to be sourced by individual AI wrappers
