@@ -158,20 +158,42 @@ run_cursor() {
     vibe_wrapper_done "Cursor" "success" "$duration" "0"
   fi
 
-  if command -v timeout >/dev/null 2>&1; then
-    exec timeout "$final_timeout" cursor-agent --model "$DEFAULT_MODEL" --print "$prompt"
-  else
+  # Timeout strategy: Use outer timeout when called from workflow, inner timeout for standalone execution
+  if [[ "${WRAPPER_SKIP_TIMEOUT:-}" == "1" ]]; then
+    # Called from workflow (multi-ai-ai-interface.sh) - outer timeout manages execution
+    # Use exec to replace wrapper process with AI command so timeout works correctly
     exec cursor-agent --model "$DEFAULT_MODEL" --print "$prompt"
+  else
+    # Standalone execution - use wrapper-defined timeout from AGENTS.md classification
+    if command -v timeout >/dev/null 2>&1; then
+      timeout_arg="$final_timeout"
+      if command -v to_seconds >/dev/null 2>&1; then
+        timeout_arg="$(to_seconds "$final_timeout")"
+      fi
+      exec timeout "$timeout_arg" cursor-agent --model "$DEFAULT_MODEL" --print "$prompt"
+    else
+      exec cursor-agent --model "$DEFAULT_MODEL" --print "$prompt"
+    fi
   fi
 }
 
 if [[ ${#RAW[@]} -gt 0 ]]; then
   # Cursor timeout対策: デフォルトモデル明示的指定（CURSOR_TIMEOUT_INVESTIGATION_REPORT.md参照）
   DEFAULT_MODEL="${CURSOR_DEFAULT_MODEL:-sonnet-4.5}"
-  if command -v timeout >/dev/null 2>&1; then
-    exec timeout "$TIMEOUT" cursor-agent --model "$DEFAULT_MODEL" "${RAW[@]}"
-  else
+  # Respect WRAPPER_SKIP_TIMEOUT for consistency with other execution paths
+  if [[ "${WRAPPER_SKIP_TIMEOUT:-}" == "1" ]]; then
+    # Called from workflow - outer timeout manages execution
     exec cursor-agent --model "$DEFAULT_MODEL" "${RAW[@]}"
+  else
+    if command -v timeout >/dev/null 2>&1; then
+      timeout_arg="$TIMEOUT"
+      if command -v to_seconds >/dev/null 2>&1; then
+        timeout_arg="$(to_seconds "$TIMEOUT")"
+      fi
+      exec timeout "$timeout_arg" cursor-agent --model "$DEFAULT_MODEL" "${RAW[@]}"
+    else
+      exec cursor-agent --model "$DEFAULT_MODEL" "${RAW[@]}"
+    fi
   fi
 fi
 

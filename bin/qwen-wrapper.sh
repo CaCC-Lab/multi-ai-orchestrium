@@ -142,18 +142,40 @@ run_qwen() {
     vibe_wrapper_done "Qwen" "success" "$duration" "0"
   fi
 
-  if command -v timeout >/dev/null 2>&1; then
-    exec timeout "$final_timeout" "$QWEN_BIN" -p "$prompt" -y
-  else
+  # Timeout strategy: Use outer timeout when called from workflow, inner timeout for standalone execution
+  if [[ "${WRAPPER_SKIP_TIMEOUT:-}" == "1" ]]; then
+    # Called from workflow (multi-ai-ai-interface.sh) - outer timeout manages execution
+    # Use exec to replace wrapper process with AI command so timeout works correctly
     exec "$QWEN_BIN" -p "$prompt" -y
+  else
+    # Standalone execution - use wrapper-defined timeout from AGENTS.md classification
+    if command -v timeout >/dev/null 2>&1; then
+      timeout_arg="$final_timeout"
+      if command -v to_seconds >/dev/null 2>&1; then
+        timeout_arg="$(to_seconds "$final_timeout")"
+      fi
+      exec timeout "$timeout_arg" "$QWEN_BIN" -p "$prompt" -y
+    else
+      exec "$QWEN_BIN" -p "$prompt" -y
+    fi
   fi
 }
 
 if [[ ${#RAW[@]} -gt 0 ]]; then
-  if command -v timeout >/dev/null 2>&1; then
-    exec timeout "$TIMEOUT" "$QWEN_BIN" "${RAW[@]}"
-  else
+  # Respect WRAPPER_SKIP_TIMEOUT for consistency with other execution paths
+  if [[ "${WRAPPER_SKIP_TIMEOUT:-}" == "1" ]]; then
+    # Called from workflow - outer timeout manages execution
     exec "$QWEN_BIN" "${RAW[@]}"
+  else
+    if command -v timeout >/dev/null 2>&1; then
+      timeout_arg="$TIMEOUT"
+      if command -v to_seconds >/dev/null 2>&1; then
+        timeout_arg="$(to_seconds "$TIMEOUT")"
+      fi
+      exec timeout "$timeout_arg" "$QWEN_BIN" "${RAW[@]}"
+    else
+      exec "$QWEN_BIN" "${RAW[@]}"
+    fi
   fi
 fi
 

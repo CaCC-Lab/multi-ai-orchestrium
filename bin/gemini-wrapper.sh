@@ -131,10 +131,22 @@ run_gemini() {
     vibe_wrapper_done "Gemini" "success" "$duration" "0"
   fi
 
-  if command -v timeout >/dev/null 2>&1; then
-    exec timeout "$final_timeout" gemini -p "$prompt" -y "${RAW[@]}"
-  else
+  # Timeout strategy: Use outer timeout when called from workflow, inner timeout for standalone execution
+  if [[ "${WRAPPER_SKIP_TIMEOUT:-}" == "1" ]]; then
+    # Called from workflow (multi-ai-ai-interface.sh) - outer timeout manages execution
+    # Use exec to replace wrapper process with AI command so timeout works correctly
     exec gemini -p "$prompt" -y "${RAW[@]}"
+  else
+    # Standalone execution - use wrapper-defined timeout from AGENTS.md classification
+    if command -v timeout >/dev/null 2>&1; then
+      timeout_arg="$final_timeout"
+      if command -v to_seconds >/dev/null 2>&1; then
+        timeout_arg="$(to_seconds "$final_timeout")"
+      fi
+      exec timeout "$timeout_arg" gemini -p "$prompt" -y "${RAW[@]}"
+    else
+      exec gemini -p "$prompt" -y "${RAW[@]}"
+    fi
   fi
 }
 

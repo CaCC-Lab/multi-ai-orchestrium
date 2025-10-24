@@ -182,18 +182,40 @@ run_droid () {
     vibe_wrapper_done "Droid" "success" "$duration" "0"
   fi
 
-  if command -v timeout >/dev/null 2>&1; then
-    exec timeout "$final_timeout" droid exec --auto "$final_quality" "$task"
-  else
+  # Timeout strategy: Use outer timeout when called from workflow, inner timeout for standalone execution
+  if [[ "${WRAPPER_SKIP_TIMEOUT:-}" == "1" ]]; then
+    # Called from workflow (multi-ai-ai-interface.sh) - outer timeout manages execution
+    # Use exec to replace wrapper process with AI command so timeout works correctly
     exec droid exec --auto "$final_quality" "$task"
+  else
+    # Standalone execution - use wrapper-defined timeout from AGENTS.md classification
+    if command -v timeout >/dev/null 2>&1; then
+      timeout_arg="$final_timeout"
+      if command -v to_seconds >/dev/null 2>&1; then
+        timeout_arg="$(to_seconds "$final_timeout")"
+      fi
+      exec timeout "$timeout_arg" droid exec --auto "$final_quality" "$task"
+    else
+      exec droid exec --auto "$final_quality" "$task"
+    fi
   fi
 }
 
 if [[ ${#RAW[@]} -gt 0 ]]; then
-  if command -v timeout >/dev/null 2>&1; then
-    exec timeout "$TIMEOUT" droid "${RAW[@]}"
-  else
+  # Respect WRAPPER_SKIP_TIMEOUT for consistency with other execution paths
+  if [[ "${WRAPPER_SKIP_TIMEOUT:-}" == "1" ]]; then
+    # Called from workflow - outer timeout manages execution
     exec droid "${RAW[@]}"
+  else
+    if command -v timeout >/dev/null 2>&1; then
+      timeout_arg="$TIMEOUT"
+      if command -v to_seconds >/dev/null 2>&1; then
+        timeout_arg="$(to_seconds "$TIMEOUT")"
+      fi
+      exec timeout "$timeout_arg" droid "${RAW[@]}"
+    else
+      exec droid "${RAW[@]}"
+    fi
   fi
 fi
 

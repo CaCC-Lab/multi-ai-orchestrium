@@ -324,11 +324,12 @@ call_ai_with_context() {
                 fi
             else
                 # Fallback to stdin redirect with --stdin flag for explicit handling
+                # Set WRAPPER_SKIP_TIMEOUT=1 to let outer timeout manage execution
                 if [ -n "$output_file" ]; then
-                    timeout "$timeout" "$wrapper_script" --stdin < "$prompt_file" > "$output_file" 2>&1
+                    WRAPPER_SKIP_TIMEOUT=1 timeout "$timeout" "$wrapper_script" --stdin < "$prompt_file" > "$output_file" 2>&1
                     exit_code=$?
                 else
-                    timeout "$timeout" "$wrapper_script" --stdin < "$prompt_file" 2>&1
+                    WRAPPER_SKIP_TIMEOUT=1 timeout "$timeout" "$wrapper_script" --stdin < "$prompt_file" 2>&1
                     exit_code=$?
                 fi
             fi
@@ -365,12 +366,21 @@ call_ai_with_context() {
         local wrapper_script="$PROJECT_ROOT/bin/${ai_name}-wrapper.sh"
 
         if [ -f "$wrapper_script" ]; then
-            timeout "$timeout" "$wrapper_script" --prompt "$context" ${output_file:+> "$output_file"} 2>&1
+            # Set WRAPPER_SKIP_TIMEOUT=1 to let outer timeout manage execution
+            if [ -n "$output_file" ]; then
+                WRAPPER_SKIP_TIMEOUT=1 timeout "$timeout" "$wrapper_script" --prompt "$context" > "$output_file" 2>&1
+            else
+                WRAPPER_SKIP_TIMEOUT=1 timeout "$timeout" "$wrapper_script" --prompt "$context" 2>&1
+            fi
             return $?
         else
             # Fallback to direct CLI
             log_warning "[$ai_name] Wrapper not found, using direct CLI"
-            timeout "$timeout" "$ai_name" --prompt "$context" ${output_file:+> "$output_file"} 2>&1
+            if [ -n "$output_file" ]; then
+                timeout "$timeout" "$ai_name" --prompt "$context" > "$output_file" 2>&1
+            else
+                timeout "$timeout" "$ai_name" --prompt "$context" 2>&1
+            fi
             return $?
         fi
     fi
