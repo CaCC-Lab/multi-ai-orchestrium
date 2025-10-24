@@ -5,6 +5,19 @@
 version: "3.0"
 default_profile: "balanced-multi-ai"
 
+# P0.3.2.2: Parallel Execution Resource Limiting
+execution:
+  max_parallel_jobs: 4
+  job_pool:
+    enabled: true
+    max_concurrent: 4
+    resource_monitoring: true
+  notes: |
+    max_parallel_jobs: Maximum number of concurrent AI executions (default: 4)
+    - Prevents resource exhaustion when running 7AI workflows
+    - Example: 7 AI tasks submitted → only 4 run concurrently, 3 queue
+    - Adjust based on system resources (CPU cores, memory)
+
 # AI Capabilities Reference
 ai_capabilities:
   claude:

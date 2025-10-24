@@ -301,14 +301,27 @@ execute_parallel_phase() {
         return 0
     fi
 
-    log_info "Starting $parallel_count parallel AI tasks..."
+    # P0.3.2.1: Get max_parallel_jobs from YAML or use default (4)
+    local max_parallel_jobs=4
+    if command -v yq &>/dev/null; then
+        local yaml_max
+        yaml_max=$(yq eval ".execution.max_parallel_jobs // 4" "$MULTI_AI_CONFIG" 2>/dev/null || echo "4")
+        if [[ "$yaml_max" =~ ^[0-9]+$ ]] && [ "$yaml_max" -gt 0 ]; then
+            max_parallel_jobs=$yaml_max
+        fi
+    fi
+
+    log_info "Starting $parallel_count parallel AI tasks (max concurrent: $max_parallel_jobs)..."
+
+    # P0.3.2.1: Initialize job pool with resource limiting
+    init_job_pool "$max_parallel_jobs"
 
     # Arrays to track task metadata
     local pids=()
     local ai_names=()
     local blocking_flags=()
 
-    # Launch all parallel tasks in background
+    # Launch all parallel tasks with job pool control
     for ((i = 0; i < parallel_count; i++)); do
         local ai
         ai=$(get_parallel_ai "$profile" "$workflow" "$phase_idx" "$i")
@@ -337,11 +350,19 @@ Please complete this task according to your role."
 
         log_info "[$ai] Starting: $name (timeout: ${timeout}s)"
 
+        # P0.3.2.1: Wait for job slot before launching (resource limiting)
+        wait_for_slot
+
         # Launch in background
         call_ai "$ai" "$prompt" "$timeout" "$output_file" &
-        pids+=($!)
+        local pid=$!
+        pids+=($pid)
         ai_names+=("$ai")
         blocking_flags+=("$blocking")
+
+        # Track PID in job pool
+        JOB_POOL_PIDS+=($pid)
+        ((JOB_POOL_RUNNING++))
     done
 
     # Wait for all parallel tasks to complete
@@ -362,6 +383,9 @@ Please complete this task according to your role."
             fi
         }
     done
+
+    # P0.3.2.1: Cleanup job pool
+    cleanup_job_pool
 
     if ! $phase_failed; then
         if $nonblocking_issue; then

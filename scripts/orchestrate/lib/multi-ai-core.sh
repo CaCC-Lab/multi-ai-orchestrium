@@ -340,3 +340,278 @@ show_multi_ai_banner() {
     echo -e "${GREEN}Integration:${NC}     Cursor (IDE)"
     echo ""
 }
+
+# ============================================================================
+# Job Pool API (P0.3.1.1) - Parallel Execution Resource Limiting
+# ============================================================================
+# Purpose: Limit concurrent AI executions to prevent resource exhaustion
+# Usage:
+#   init_job_pool 4              # Allow max 4 concurrent jobs
+#   submit_job run_ai_task "$ai" # Submit job to pool
+#   cleanup_job_pool             # Wait for all jobs to complete
+
+# Global job pool state
+declare -a JOB_POOL_PIDS=()
+declare -i JOB_POOL_RUNNING=0
+declare -i JOB_POOL_MAX=4
+
+# Initialize job pool with maximum concurrent jobs
+init_job_pool() {
+    local max_jobs="${1:-4}"
+
+    if ! [[ "$max_jobs" =~ ^[0-9]+$ ]] || [ "$max_jobs" -lt 1 ]; then
+        log_error "Invalid max_jobs: $max_jobs (must be positive integer)"
+        return 1
+    fi
+
+    JOB_POOL_MAX=$max_jobs
+    JOB_POOL_RUNNING=0
+    JOB_POOL_PIDS=()
+
+    log_info "Job pool initialized (max concurrent: $JOB_POOL_MAX)"
+    return 0
+}
+
+# Submit job to pool (waits if pool is full)
+submit_job() {
+    local job_function="$1"
+    shift
+    local args=("$@")
+
+    if [ -z "$job_function" ]; then
+        log_error "submit_job: job_function required"
+        return 1
+    fi
+
+    # Wait for slot to become available
+    wait_for_slot
+
+    # Execute job in background
+    "$job_function" "${args[@]}" &
+    local pid=$!
+    JOB_POOL_PIDS+=($pid)
+    ((JOB_POOL_RUNNING++))
+
+    log_info "Job submitted (PID: $pid, Running: $JOB_POOL_RUNNING/$JOB_POOL_MAX)"
+    return 0
+}
+
+# Wait for job slot to become available
+wait_for_slot() {
+    while [ $JOB_POOL_RUNNING -ge $JOB_POOL_MAX ]; do
+        # Wait for any job to complete
+        if wait -n 2>/dev/null; then
+            ((JOB_POOL_RUNNING--))
+            log_info "Job completed (Running: $JOB_POOL_RUNNING/$JOB_POOL_MAX)"
+        else
+            # wait -n failed (no background jobs or unsupported)
+            # Fall back to polling
+            sleep 0.5
+
+            # Check if any PIDs have finished
+            local finished_count=0
+            for pid in "${JOB_POOL_PIDS[@]}"; do
+                if ! kill -0 "$pid" 2>/dev/null; then
+                    ((finished_count++))
+                fi
+            done
+
+            if [ $finished_count -gt 0 ]; then
+                JOB_POOL_RUNNING=$((${#JOB_POOL_PIDS[@]} - finished_count))
+                break
+            fi
+        fi
+    done
+}
+
+# Clean up job pool and wait for all jobs to complete
+cleanup_job_pool() {
+    if [ ${#JOB_POOL_PIDS[@]} -eq 0 ]; then
+        log_info "Job pool empty (no jobs to clean up)"
+        return 0
+    fi
+
+    log_info "Waiting for ${#JOB_POOL_PIDS[@]} jobs to complete..."
+
+    local failed=0
+    for pid in "${JOB_POOL_PIDS[@]}"; do
+        if wait "$pid"; then
+            log_info "Job $pid completed successfully"
+        else
+            local exit_code=$?
+            log_warning "Job $pid failed (exit code: $exit_code)"
+            ((failed++))
+        fi
+    done
+
+    # Reset pool state
+    JOB_POOL_RUNNING=0
+    JOB_POOL_PIDS=()
+
+    if [ $failed -eq 0 ]; then
+        log_success "All jobs completed successfully"
+        return 0
+    else
+        log_warning "$failed jobs failed"
+        return 1
+    fi
+}
+
+# ============================================================================
+# Semaphore API (P0.3.1.2) - File-Based Resource Locking
+# ============================================================================
+# Purpose: Process-safe resource locking for cross-script synchronization
+# Usage:
+#   sem_init "my-resource" 4     # Allow max 4 concurrent holders
+#   sem_acquire "my-resource"    # Acquire lock (blocks if full)
+#   sem_release "my-resource"    # Release lock
+#   sem_cleanup "my-resource"    # Clean up semaphore files
+
+# Initialize semaphore with maximum concurrent holders
+sem_init() {
+    local sem_name="$1"
+    local max_holders="${2:-4}"
+
+    if [ -z "$sem_name" ]; then
+        log_error "sem_init: semaphore name required"
+        return 1
+    fi
+
+    if ! [[ "$max_holders" =~ ^[0-9]+$ ]] || [ "$max_holders" -lt 1 ]; then
+        log_error "Invalid max_holders: $max_holders (must be positive integer)"
+        return 1
+    fi
+
+    local sem_dir="/tmp/multi-ai-sem-$$"
+    local sem_file="$sem_dir/$sem_name"
+
+    # Create semaphore directory
+    mkdir -p "$sem_dir" 2>/dev/null || {
+        log_error "Failed to create semaphore directory: $sem_dir"
+        return 1
+    }
+
+    # Initialize semaphore file with max holders
+    echo "$max_holders" > "$sem_file"
+    chmod 600 "$sem_file"
+
+    log_info "Semaphore initialized: $sem_name (max holders: $max_holders)"
+    return 0
+}
+
+# Acquire semaphore (blocks if unavailable)
+sem_acquire() {
+    local sem_name="$1"
+    local timeout="${2:-0}"  # 0 = no timeout
+
+    if [ -z "$sem_name" ]; then
+        log_error "sem_acquire: semaphore name required"
+        return 1
+    fi
+
+    local sem_dir="/tmp/multi-ai-sem-$$"
+    local sem_file="$sem_dir/$sem_name"
+    local lock_file="$sem_file.lock"
+    local start_time=$(date +%s)
+
+    if [ ! -f "$sem_file" ]; then
+        log_error "Semaphore not initialized: $sem_name"
+        return 1
+    fi
+
+    # Wait for available slot
+    while true; do
+        # Atomic lock acquisition using mkdir
+        if mkdir "$lock_file" 2>/dev/null; then
+            # Critical section: check and decrement counter
+            local current=$(cat "$sem_file" 2>/dev/null || echo "0")
+
+            if [ "$current" -gt 0 ]; then
+                # Slot available - decrement counter
+                echo $((current - 1)) > "$sem_file"
+                rmdir "$lock_file"
+                log_info "Semaphore acquired: $sem_name (remaining: $((current - 1)))"
+                return 0
+            else
+                # No slots available - release lock and wait
+                rmdir "$lock_file"
+            fi
+        fi
+
+        # Check timeout
+        if [ "$timeout" -gt 0 ]; then
+            local elapsed=$(($(date +%s) - start_time))
+            if [ $elapsed -ge $timeout ]; then
+                log_error "Semaphore acquire timeout: $sem_name (${timeout}s)"
+                return 1
+            fi
+        fi
+
+        # Wait before retry
+        sleep 0.1
+    done
+}
+
+# Release semaphore
+sem_release() {
+    local sem_name="$1"
+
+    if [ -z "$sem_name" ]; then
+        log_error "sem_release: semaphore name required"
+        return 1
+    fi
+
+    local sem_dir="/tmp/multi-ai-sem-$$"
+    local sem_file="$sem_dir/$sem_name"
+    local lock_file="$sem_file.lock"
+
+    if [ ! -f "$sem_file" ]; then
+        log_error "Semaphore not initialized: $sem_name"
+        return 1
+    fi
+
+    # Wait for lock
+    local retries=100
+    while [ $retries -gt 0 ]; do
+        if mkdir "$lock_file" 2>/dev/null; then
+            # Critical section: increment counter
+            local current=$(cat "$sem_file" 2>/dev/null || echo "0")
+            echo $((current + 1)) > "$sem_file"
+            rmdir "$lock_file"
+            log_info "Semaphore released: $sem_name (available: $((current + 1)))"
+            return 0
+        fi
+
+        sleep 0.1
+        ((retries--))
+    done
+
+    log_error "Failed to release semaphore: $sem_name (lock timeout)"
+    return 1
+}
+
+# Clean up semaphore files
+sem_cleanup() {
+    local sem_name="$1"
+
+    if [ -z "$sem_name" ]; then
+        # Clean up all semaphores for this process
+        local sem_dir="/tmp/multi-ai-sem-$$"
+        if [ -d "$sem_dir" ]; then
+            rm -rf "$sem_dir"
+            log_info "All semaphores cleaned up"
+        fi
+    else
+        # Clean up specific semaphore
+        local sem_dir="/tmp/multi-ai-sem-$$"
+        local sem_file="$sem_dir/$sem_name"
+        local lock_file="$sem_file.lock"
+
+        rm -f "$sem_file"
+        rmdir "$lock_file" 2>/dev/null || true
+
+        log_info "Semaphore cleaned up: $sem_name"
+    fi
+
+    return 0
+}
