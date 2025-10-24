@@ -380,8 +380,7 @@ main() {
 # ============================================================
 
 # Trap errors and provide helpful messages
-# TEMPORARILY DISABLED FOR DEBUGGING
-#trap 'error_handler $? $LINENO' ERR
+trap 'error_handler $? $LINENO' ERR
 
 error_handler() {
   local exit_code=$1

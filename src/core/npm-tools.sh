@@ -16,12 +16,7 @@ source "${_MODULE_DIR}/cache.sh" 2>/dev/null || true
 # ============================================================
 
 # Default NPM tools to check
-declare -gA NPM_TOOLS=(
-  ["Claude Code"]="@anthropic-ai/claude-code"
-  ["Gemini CLI"]="@google/gemini-cli"
-  ["OpenAI Codex"]="@openai/codex"
-  ["Qwen Code"]="@qwen-code/qwen-code"
-)
+declare -gA NPM_TOOLS=()
 
 # ============================================================
 # NPM Current Version Detection (4-stage fallback)

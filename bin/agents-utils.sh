@@ -30,6 +30,33 @@ classify_task() {
     echo "standard"
 }
 
+# Convert timeout string to integer seconds
+# Args: timeout value (e.g., "120", "120s", "2m", "1h")
+# Returns: integer seconds
+to_seconds() {
+    local v="${1:-}"
+    # Trim spaces
+    v="${v//[[:space:]]/}"
+    # Empty -> default 0
+    [[ -z "$v" ]] && { echo 0; return 0; }
+    # Pure number
+    if [[ "$v" =~ ^[0-9]+$ ]]; then echo "$v"; return 0; fi
+    # Ns, Nm, Nh
+    if [[ "$v" =~ ^([0-9]+)([smh])$ ]]; then
+        local n="${BASH_REMATCH[1]}"; local u="${BASH_REMATCH[2]}"
+        case "$u" in
+            s) echo "$n" ;;
+            m) echo $((n * 60)) ;;
+            h) echo $((n * 3600)) ;;
+        esac
+        return 0
+    fi
+    # Fallback: strip trailing 's' if present
+    if [[ "$v" =~ ^([0-9]+)s$ ]]; then echo "${BASH_REMATCH[1]}"; return 0; fi
+    # Last resort: return as-is (may fail fast and be obvious)
+    echo "$v"
+}
+
 # Get timeout multiplier based on task classification
 # Args: classification, base_timeout (in seconds)
 # Returns: timeout string (e.g., "90s", "180s", "540s")
@@ -171,6 +198,7 @@ find_agents_md() {
 
 # Export functions for sourcing
 export -f classify_task
+export -f to_seconds
 export -f get_task_timeout
 export -f get_process_label
 export -f requires_approval

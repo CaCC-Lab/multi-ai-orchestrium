@@ -16,12 +16,7 @@ source "${_MODULE_DIR}/version-checker.sh" 2>/dev/null || true
 # ============================================================
 
 # Default CLI tools to check
-declare -gA CLI_TOOLS=(
-  ["Cursor"]="cursor"
-  ["CodeRabbit"]="coderabbit"
-  ["Amp"]="amp"
-  ["Droid"]="droid"
-)
+declare -gA CLI_TOOLS=()
 
 # ============================================================
 # CLI Tool Existence Check

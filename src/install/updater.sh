@@ -589,6 +589,18 @@ auto_update_all() {
 }
 
 # ============================================================
+# Main Execution Flow
+# ============================================================
+
+main() {
+  # Parse command line arguments (if any)
+  # This is a placeholder for future enhancements
+
+  # Execute the main update logic
+  update_outdated_tools
+}
+
+# ============================================================
 # Module Information
 # ============================================================
 
@@ -650,3 +662,12 @@ declare -fx update_cli_tools 2>/dev/null || true
 declare -fx update_all_tools 2>/dev/null || true
 declare -fx update_outdated_tools 2>/dev/null || true
 declare -fx auto_update_all 2>/dev/null || true
+
+# ============================================================
+# Entry Point
+# ============================================================
+
+# Only execute main if script is run directly (not sourced)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi
