@@ -69,6 +69,34 @@ The File-Based Prompt System enables Multi-AI Orchestrium to handle large prompt
 
 **Location**: `scripts/orchestrate/lib/multi-ai-ai-interface.sh:281`
 
+**Purpose**: Main entry point for AI invocation with automatic size-based routing.
+
+**Parameters**:
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `ai_name` | string | Yes | - | AI tool name: claude, gemini, amp, qwen, droid, codex, cursor |
+| `context` | string | Yes | - | Prompt/context string (any size) |
+| `timeout` | integer | No | 300 | Timeout in seconds |
+| `output_file` | string | No | - | Path to save output (optional) |
+
+**Returns**: Exit code from AI execution (0 = success, 1 = failure)
+
+**Usage Examples**:
+```bash
+# Small prompt (auto uses command-line)
+call_ai_with_context "claude" "Explain quantum computing" 300
+
+# Large prompt (auto uses file-based routing)
+LARGE_DOC=$(cat 50kb-specification.txt)
+call_ai_with_context "gemini" "$LARGE_DOC" 900 "/tmp/analysis.txt"
+
+# Parallel execution with large prompts
+call_ai_with_context "claude" "$spec1" 600 "/tmp/result1.txt" &
+call_ai_with_context "gemini" "$spec2" 600 "/tmp/result2.txt" &
+wait
+```
+
 **Algorithm**:
 ```bash
 function call_ai_with_context() {
@@ -230,6 +258,70 @@ export VIBELOGGER_DEBUG=1
 export FILE_BASED_PROMPTS_ENABLED=false
 ```
 
+## Best Practices
+
+### 1. Always Use Context-Aware Functions
+
+✅ **Recommended**:
+```bash
+call_ai_with_context "claude" "$user_input" 300
+```
+
+❌ **Avoid**:
+```bash
+# Manual size checking is error-prone
+if [ ${#user_input} -gt 1024 ]; then
+    # Manual file creation...
+fi
+```
+
+### 2. Set Appropriate Timeouts
+
+```bash
+# Short tasks (simple queries)
+call_ai_with_context "claude" "$prompt" 120  # 2 minutes
+
+# Medium tasks (analysis, code review)
+call_ai_with_context "gemini" "$prompt" 600  # 10 minutes
+
+# Long tasks (large contexts, comprehensive analysis)
+call_ai_with_context "droid" "$large_context" 1800  # 30 minutes
+```
+
+### 3. Handle Errors Gracefully
+
+```bash
+# Implement fallback strategies
+if ! call_ai_with_context "claude" "$prompt" 300 "$output"; then
+    log_error "Claude failed, trying Gemini fallback..."
+    call_ai_with_context "gemini" "$prompt" 300 "$output"
+fi
+```
+
+### 4. Use Output Files for Large Results
+
+```bash
+# Good: Capture to file for large outputs
+call_ai_with_context "claude" "$prompt" 300 "/tmp/result.txt"
+result=$(cat /tmp/result.txt)
+
+# Avoid: Direct capture may truncate large outputs
+result=$(call_ai_with_context "claude" "$prompt" 300)
+```
+
+### 5. Leverage Parallel Execution
+
+```bash
+# Concurrent AI calls - no file conflicts (mktemp ensures unique names)
+call_ai_with_context "claude" "$spec1" 600 "/tmp/result1.txt" &
+call_ai_with_context "gemini" "$spec2" 600 "/tmp/result2.txt" &
+call_ai_with_context "qwen" "$spec3" 600 "/tmp/result3.txt" &
+wait
+
+# Process results
+cat /tmp/result*.txt
+```
+
 ## Performance Benchmarks
 
 ### Pure File I/O Overhead (Phase 7 - Verified)
@@ -303,6 +395,18 @@ The file I/O overhead above does not include:
 5. **Rotate TMPDIR**: Consider using encrypted tmpfs for sensitive prompts
 
 ## Troubleshooting
+
+### Error Reference
+
+| Exit Code | Error Message | Cause | Resolution |
+|-----------|---------------|-------|------------|
+| 1 | "AI tool '$ai' not found" | AI CLI not installed | Install missing AI tool with package manager |
+| 1 | "Failed to create temporary file" | /tmp not writable or full | Check `/tmp` permissions and disk space |
+| 1 | "Failed to set permissions" | chmod failed | Verify filesystem supports permission changes |
+| 1 | "Failed to write content" | Disk full or I/O error | Free up disk space, check filesystem health |
+| 124 | (Timeout) | Execution exceeded limit | Increase timeout value or optimize prompt size |
+| 126 | "Permission denied" | Wrapper script not executable | Run `chmod +x bin/*-wrapper.sh` |
+| 127 | "Command not found" | AI binary not in PATH | Verify AI tool installation and PATH |
 
 ### Common Issues
 
@@ -384,6 +488,23 @@ grep "file_prompt" logs/vibe/$(date +%Y%m%d)/*.jsonl
 jq -r '.event' logs/vibe/$(date +%Y%m%d)/*.jsonl | \
   grep file_prompt | sort | uniq -c
 ```
+
+### Troubleshooting Checklist
+
+When experiencing issues with file-based prompts, follow this systematic checklist:
+
+- [ ] **AI Tool Installation**: Verify AI CLI exists: `command -v <ai-name>`
+- [ ] **Temp Directory Writable**: Test write permissions: `touch /tmp/test && rm /tmp/test`
+- [ ] **Disk Space Available**: Check space: `df -h /tmp` (need at least 100MB free)
+- [ ] **Wrapper Executability**: Ensure wrappers are executable: `ls -l bin/*-wrapper.sh`
+- [ ] **Environment Variables**: Check TMPDIR if set: `echo $TMPDIR`
+- [ ] **Small Prompt Test**: Try with <100 byte prompt first
+- [ ] **Timeout Adequate**: For large prompts, increase timeout to 600s+
+- [ ] **Leftover Files**: Clean up orphaned files: `ls /tmp/prompt-* && rm /tmp/prompt-*`
+- [ ] **VibeLogger Logs**: Review recent logs: `tail -50 logs/vibe/$(date +%Y%m%d)/*.jsonl`
+- [ ] **File Permissions**: Verify temp files have 600 permissions
+- [ ] **PATH Variable**: Ensure AI binaries in PATH: `echo $PATH | tr ':' '\n'`
+- [ ] **Concurrent Limit**: Check if hitting file descriptor limits with parallel calls
 
 ## Testing
 

@@ -52,12 +52,15 @@ CORE FINDINGS:
 CRITICAL ISSUES (Fix Now):
 ==========================
 
-1. DUPLICATE FILE-BASED-PROMPT DOCUMENTATION
-   Location: docs/file-based-prompt-guide.md (485 lines)
-   Duplicate: docs/FILE_BASED_PROMPT_SYSTEM.md (473 lines)
-   Impact: Reader confusion, maintenance burden
-   Action: Remove file-based-prompt-guide.md, consolidate into FILE_BASED_PROMPT_SYSTEM.md
-   Effort: 15 minutes
+1. DUPLICATE FILE-BASED-PROMPT DOCUMENTATION ✅ RESOLVED (2025-10-24)
+   Location: docs/file-based-prompt-guide.md (485 lines) - DELETED
+   Canonical: docs/FILE_BASED_PROMPT_SYSTEM.md (enhanced with merged content)
+   Impact: Reader confusion eliminated, maintenance burden reduced
+   Actions Completed:
+     ✅ Merged unique content (API reference, best practices, error codes, checklist)
+     ✅ Removed duplicate file-based-prompt-guide.md
+     ✅ Verified canonical file contains all valuable content
+   Completion Time: 15 minutes
    Priority: CRITICAL
 
 2. MISSING TESTS README

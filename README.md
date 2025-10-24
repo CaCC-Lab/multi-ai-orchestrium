@@ -46,7 +46,7 @@ multi-ai-chatdev-develop "新プロジェクトの概要"
 
 ### 📝 setup-permissions.sh について
 
-`setup-permissions.sh` は、プロジェクト内の全シェルスクリプト（36個）に実行権限を一括付与するユーティリティです。
+`setup-permissions.sh` は、プロジェクト内の全シェルスクリプト（35個）に実行権限を一括付与するユーティリティです。
 
 **機能:**
 - 全 `.sh` ファイルを自動検出
