@@ -212,6 +212,14 @@ hello-world.py
 docs/
 tests/
 
+# Exception: Keep Claude Review documentation
+!docs/API_REFERENCE_CLAUDE_REVIEW.md
+!docs/SECURITY_RULES_REFERENCE.md
+!docs/TESTING_GUIDE_CLAUDE_REVIEW.md
+!docs/USER_GUIDE_CLAUDE_REVIEW.md
+!docs/DEVELOPER_GUIDE_CLAUDE_REVIEW.md
+!docs/CLAUDE_REVIEW_SLASH_COMMANDS_IMPLEMENTATION_PLAN.md
+
 
 # ========== Keep These Files ==========
 # Keep empty log directories with .gitkeep
