@@ -10,6 +10,9 @@ set -euo pipefail
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Load sanitization library
+source "$SCRIPT_DIR/lib/sanitize.sh"
 SECURITY_REVIEW_TIMEOUT=${SECURITY_REVIEW_TIMEOUT:-900}  # Default: 15 minutes
 OUTPUT_DIR="${OUTPUT_DIR:-logs/claude-security-reviews}"
 COMMIT_HASH="${COMMIT_HASH:-HEAD}"
@@ -349,7 +352,10 @@ For each vulnerability found, provide:
 - Remediation suggestions with code examples
 - CVSS v3.1 score if applicable"
 
-    local prompt_file="/tmp/claude-security-prompt-$$-$RANDOM.txt"
+    # Security: Use mktemp for secure temporary file creation
+    local prompt_file
+    prompt_file=$(mktemp "${TMPDIR:-/tmp}/claude-security-prompt-XXXXXX.txt")
+    chmod 600 "$prompt_file"  # Ensure only owner can read/write
     echo "$security_prompt" > "$prompt_file"
 
     if timeout "$SECURITY_REVIEW_TIMEOUT" bash -c "$PROJECT_ROOT/bin/claude-wrapper.sh --stdin < '$prompt_file'" > "$output_file" 2>&1; then

@@ -10,6 +10,9 @@ set -euo pipefail
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Load sanitization library
+source "$SCRIPT_DIR/lib/sanitize.sh"
 CLAUDE_REVIEW_TIMEOUT=${CLAUDE_REVIEW_TIMEOUT:-600}  # Default: 10 minutes
 OUTPUT_DIR="${OUTPUT_DIR:-logs/claude-reviews}"
 COMMIT_HASH="${COMMIT_HASH:-HEAD}"
@@ -283,7 +286,10 @@ Please analyze:
 Provide specific, actionable feedback with line numbers where applicable."
 
     # Execute Claude wrapper with timeout
-    local prompt_file="/tmp/claude-review-prompt-$$-$RANDOM.txt"
+    # Security: Use mktemp for secure temporary file creation
+    local prompt_file
+    prompt_file=$(mktemp "${TMPDIR:-/tmp}/claude-review-prompt-XXXXXX.txt")
+    chmod 600 "$prompt_file"  # Ensure only owner can read/write
     echo "$review_prompt" > "$prompt_file"
 
     if timeout "$CLAUDE_REVIEW_TIMEOUT" bash -c "$PROJECT_ROOT/bin/claude-wrapper.sh --stdin < '$prompt_file'" > "$output_file" 2>&1; then
@@ -409,7 +415,10 @@ $(git show --no-color --pretty=format:"" "$COMMIT_HASH" | head -200)
 
 Provide a structured review with specific recommendations."
 
-        local prompt_file="/tmp/claude-alt-review-prompt-$$-$RANDOM.txt"
+        # Security: Use mktemp for secure temporary file creation
+        local prompt_file
+        prompt_file=$(mktemp "${TMPDIR:-/tmp}/claude-alt-review-prompt-XXXXXX.txt")
+        chmod 600 "$prompt_file"  # Ensure only owner can read/write
         echo "$ai_prompt" > "$prompt_file"
 
         if timeout "$CLAUDE_REVIEW_TIMEOUT" bash -c "$PROJECT_ROOT/bin/${available_ai}-wrapper.sh --stdin < '$prompt_file'" > "$ai_analysis_file" 2>&1; then
