@@ -183,6 +183,21 @@ check_ai_cli_versions() {
     return 0
 }
 
+# ============================================================================
+# Dependency Checks (P0.1.1 - Critical)
+# ============================================================================
+
+# P0.1.1: Verify jq dependency before any operations
+# jq is required for structured error logging in log_structured_error()
+if [[ "${MULTI_AI_INIT:-}" != "test" ]]; then
+    if ! check_jq_dependency; then
+        echo "ERROR: Critical dependency missing: jq" >&2
+        echo "Multi-AI Orchestrium requires jq for structured logging" >&2
+        echo "Install: apt-get install jq (Debian/Ubuntu) or brew install jq (macOS)" >&2
+        exit 1
+    fi
+fi
+
 # Execute version check on script load (not when sourced for testing)
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]] || [[ "${MULTI_AI_INIT:-}" != "test" ]]; then
     check_ai_cli_versions

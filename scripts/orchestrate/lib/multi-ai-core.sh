@@ -55,6 +55,23 @@ log_phase() {
 }
 
 # ============================================================================
+# Dependency Check Functions (P0.1.1)
+# ============================================================================
+
+# check_jq_dependency - Verify jq is installed for structured logging
+# Usage: check_jq_dependency
+# Returns: 0 if jq is available, 1 if missing
+# Output: Error messages to stderr if jq is not found
+check_jq_dependency() {
+    if ! command -v jq &>/dev/null; then
+        log_error "jq is required but not installed"
+        log_error "Install: apt-get install jq (Debian/Ubuntu) or brew install jq (macOS)"
+        return 1
+    fi
+    return 0
+}
+
+# ============================================================================
 # Timestamp Function (1 function)
 # ============================================================================
 
@@ -644,7 +661,27 @@ log_structured_error() {
     # Create error log directory if it doesn't exist
     mkdir -p "$MULTI_AI_ERROR_LOG_DIR" 2>/dev/null || true
 
-    # Build JSON error entry
+    # P0.1.1: jq dependency check with fallback
+    if ! command -v jq &>/dev/null; then
+        # Fallback: Plain text logging when jq is missing
+        local timestamp_str=$(date +"%Y-%m-%d %H:%M:%S")
+        local fallback_log="$MULTI_AI_ERROR_LOG_DIR/${date_str}.txt"
+
+        # Output to stderr with color formatting
+        echo -e "${RED}❌ ERROR:${NC}" >&2
+        echo -e "  ${YELLOW}What:${NC} $what" >&2
+        echo -e "  ${YELLOW}Why:${NC}  $why" >&2
+        echo -e "  ${YELLOW}How:${NC}  $how" >&2
+        echo -e "  ${CYAN}Location:${NC} ${BASH_SOURCE[2]:-unknown}:${FUNCNAME[2]:-main}:${BASH_LINENO[1]:-0}" >&2
+
+        # Plain text log entry
+        echo "[$timestamp_str] ERROR: what=$what, why=$why, how=$how, location=${BASH_SOURCE[2]:-unknown}:${FUNCNAME[2]:-main}:${BASH_LINENO[1]:-0}" >> "$fallback_log" 2>/dev/null || true
+
+        log_warning "jq not available, using plain text error logging (install jq for structured JSON logs)"
+        return 1
+    fi
+
+    # Build JSON error entry (jq available)
     local json_error=$(cat <<EOF
 {
   "timestamp_ms": $timestamp,
