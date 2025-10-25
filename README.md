@@ -259,6 +259,132 @@ bash scripts/claude-security-review.sh --timeout 1200
 - Markdown形式レポート
 - SARIF形式レポート（IDE統合用）
 
+### トラブルシューティング
+
+#### Claude MCP接続エラー
+
+**症状:** `Error: MCP server not responding` または `Connection timeout`
+
+**解決策:**
+```bash
+# Claude MCPサーバーの状態確認
+ps aux | grep claude
+
+# MCPサーバーの再起動
+killall claude-mcp-server
+claude-mcp-server start
+
+# 接続テスト
+echo "test" | claude chat
+```
+
+#### タイムアウトエラー
+
+**症状:** スクリプトが完了前にタイムアウト
+
+**解決策:**
+```bash
+# タイムアウト値を延長（デフォルト: 600秒 or 900秒）
+bash scripts/claude-review.sh --timeout 1200
+
+# 複雑なレビューの場合は1800秒（30分）を推奨
+bash scripts/claude-security-review.sh --timeout 1800
+```
+
+#### 出力ファイルが生成されない
+
+**症状:** `logs/claude-reviews/`ディレクトリが空
+
+**解決策:**
+```bash
+# ディレクトリの存在と権限を確認
+ls -ld logs/claude-reviews/
+ls -ld logs/ai-coop/
+
+# 必要に応じてディレクトリを作成
+mkdir -p logs/claude-reviews logs/ai-coop
+
+# 権限設定
+chmod 755 logs/claude-reviews logs/ai-coop
+```
+
+#### SARIF形式エラー
+
+**症状:** `Invalid SARIF format` または `jq: command not found`
+
+**解決策:**
+```bash
+# jqのインストール（Linux）
+sudo apt-get install jq
+
+# jqのインストール（macOS）
+brew install jq
+
+# jqのインストール（Windows/WSL）
+sudo apt-get update && sudo apt-get install jq
+```
+
+#### 権限エラー
+
+**症状:** `Permission denied` when running scripts
+
+**解決策:**
+```bash
+# 実行権限の付与
+chmod +x scripts/claude-review.sh
+chmod +x scripts/claude-security-review.sh
+
+# スクリプトの確認
+ls -l scripts/claude*.sh
+```
+
+#### git コミット情報が取得できない
+
+**症状:** `fatal: not a git repository` または `No commits found`
+
+**解決策:**
+```bash
+# Gitリポジトリの初期化
+git init
+git add .
+git commit -m "Initial commit"
+
+# または、特定のコミットを指定
+bash scripts/claude-review.sh --commit <commit-hash>
+```
+
+#### VibeLoggerログが記録されない
+
+**症状:** `logs/ai-coop/`にログファイルが作成されない
+
+**解決策:**
+```bash
+# VibeLoggerライブラリの確認
+test -f bin/vibe-logger-lib.sh && echo "OK" || echo "NG"
+
+# ログディレクトリの作成
+mkdir -p logs/ai-coop/$(date +%Y%m%d)
+
+# 環境変数の確認
+echo "VIBE_LOG_DIR=${VIBE_LOG_DIR:-logs/ai-coop}"
+```
+
+#### メモリ不足エラー
+
+**症状:** 大規模なレビュー時に `Out of memory` エラー
+
+**解決策:**
+```bash
+# 対象ファイルを分割してレビュー
+# 最新の5コミットのみレビュー
+git log --oneline -5 | while read commit msg; do
+  bash scripts/claude-review.sh --commit $commit
+done
+
+# または、特定のファイルパターンのみレビュー
+git diff --name-only HEAD~1..HEAD | grep "\.sh$" | xargs -I {} bash scripts/claude-review.sh
+```
+
 ## 既知の課題
 
 - タイムアウト: 長時間タスクや外部依存での処理待ちが発生しやすい。

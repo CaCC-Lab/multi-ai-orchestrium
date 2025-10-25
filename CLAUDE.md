@@ -104,6 +104,98 @@ pair-multi-ai-driver "タスク"                   # ドライバーモード（
 pair-multi-ai-navigator "コード"                # ナビゲーターモード（Gemini + Amp）
 ```
 
+## Claude Code Review CLIスクリプト
+
+プロジェクトには、Claude MCPを活用した2つの独立したコードレビュースクリプトが含まれています。
+
+### claude-review.sh - 包括的コードレビュー
+
+コミット単位でコードの品質、設計、パフォーマンスを包括的にレビューします。
+
+**基本使用法:**
+```bash
+# 最新コミットをレビュー
+bash scripts/claude-review.sh
+
+# 特定コミットをレビュー
+bash scripts/claude-review.sh --commit abc123
+
+# カスタムタイムアウト（デフォルト: 600秒）
+bash scripts/claude-review.sh --timeout 900
+```
+
+**レビュー項目:**
+- コード品質（可読性、保守性、一貫性）
+- 設計パターン（アーキテクチャ、モジュール性）
+- パフォーマンス（アルゴリズム効率、リソース使用）
+- ベストプラクティス（言語固有の推奨事項）
+- テストカバレッジ（テストの適切性）
+
+**出力形式:**
+- `logs/claude-reviews/{timestamp}_{commit}_claude.json` - JSON形式レポート
+- `logs/claude-reviews/{timestamp}_{commit}_claude.md` - Markdown形式レポート
+- `logs/ai-coop/{YYYYMMDD}/claude_review_{HH}.jsonl` - VibeLoggerログ
+
+### claude-security-review.sh - セキュリティ特化レビュー
+
+OWASP Top 10とCWEベースのセキュリティ脆弱性を検出します。
+
+**基本使用法:**
+```bash
+# セキュリティレビュー実行
+bash scripts/claude-security-review.sh
+
+# 重要度フィルタリング
+bash scripts/claude-security-review.sh --severity Critical
+
+# カスタムタイムアウト（デフォルト: 900秒）
+bash scripts/claude-security-review.sh --timeout 1200
+```
+
+**チェック項目:**
+- SQLインジェクション（CWE-89）
+- XSS（CWE-79）
+- コマンドインジェクション（CWE-77, CWE-78）
+- パストラバーサル（CWE-22）
+- ハードコードされた秘密情報（CWE-798）
+- 不安全な暗号化（CWE-327）
+- その他OWASP Top 10対応
+
+**出力形式:**
+- JSON形式レポート（CVSS v3.1スコア付き）
+- Markdown形式レポート
+- SARIF形式レポート（IDE統合用）
+
+### レビューワークフローの統合
+
+これらのスクリプトは、Multi-AI Orchestriumのワークフローと統合できます：
+
+```bash
+# 実装前ディスカッション → 実装 → セキュリティレビュー → 包括レビュー
+multi-ai-discuss-before "新機能の実装計画"
+
+# コード実装（手動またはワークフローで）
+# ...
+
+# セキュリティレビューを実行
+bash scripts/claude-security-review.sh
+
+# セキュリティ問題が無ければ、包括的レビューを実行
+bash scripts/claude-review.sh
+
+# 最終的な7AI合意形成レビュー
+multi-ai-consensus-review "実装完了コード"
+```
+
+**推奨ワークフロー:**
+1. **実装前**: `multi-ai-discuss-before` で設計レビュー
+2. **実装中**: TDDサイクル（`tdd-multi-ai-cycle`）で開発
+3. **実装後（第1段階）**: `claude-security-review.sh` でセキュリティチェック
+4. **実装後（第2段階）**: `claude-review.sh` で品質チェック
+5. **最終確認**: `multi-ai-consensus-review` で7AI合意形成
+
+これにより、セキュリティ → 品質 → 合意形成の3段階レビュープロセスを実現します。
+
 ## 設定システム
 
 ### YAMLプロファイル構造
