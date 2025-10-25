@@ -199,8 +199,19 @@ NOTES.md
 TODO.private.md
 
 # Example/Demo projects (do not push)
+calculator/
+calcurator-app/
 tetris/
 evangelion-puyopuyo/
+ecommerce-shopping-cart/
+ecommerce-app/
+snake-game/
+hello-world.py
+
+#
+docs/
+tests/
+
 
 # ========== Keep These Files ==========
 # Keep empty log directories with .gitkeep

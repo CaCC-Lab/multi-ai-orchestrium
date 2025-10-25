@@ -5,7 +5,27 @@ All notable changes to the Multi-AI Orchestrium project will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.2.0] - 2025-10-24
+## [3.2.0] - 2025-10-25
+
+### Added - Claude Review CLI Scripts
+
+#### CLIスクリプト
+- **claude-review.sh**: 包括的コードレビュースクリプト
+  - コード品質、設計、パフォーマンス、ベストプラクティスのレビュー
+  - JSON/Markdown形式レポート生成
+  - タイムアウト設定（デフォルト: 600秒）
+  - 最新レポートへのシンボリックリンク
+
+- **claude-security-review.sh**: セキュリティ脆弱性検出専用スクリプト
+  - OWASP Top 10準拠（10種類の脆弱性検出）
+  - CWE IDマッピング、CVSS v3.1スコアリング
+  - SARIF形式出力（IDE統合用）
+  - 重要度フィルタリング（Critical/High/Medium/Low）
+
+#### ドキュメント
+- **USER_GUIDE_CLAUDE_REVIEW.md**: ユーザーガイド完備
+- **DEVELOPER_GUIDE_CLAUDE_REVIEW.md**: 開発者向け拡張ガイド
+- **CLAUDE_REVIEW_SLASH_COMMANDS_IMPLEMENTATION_PLAN.md**: 実装計画（92%完了）
 
 ### Added - File-Based Prompt System (Phase 1-5)
 
