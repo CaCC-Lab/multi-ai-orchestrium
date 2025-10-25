@@ -146,12 +146,12 @@ multi-ai-orchestrium/
   
 ## 🎯 メインワークフロー関数
 
-**モジュール構成** (総計49関数、3009行):
+**モジュール構成** (総計50関数、3009行):
 - `orchestrate-multi-ai.sh` - 軽量ローダー（131行）
 - `lib/multi-ai-core.sh` - コア機能（15関数）
 - `lib/multi-ai-ai-interface.sh` - AI統合（5関数）
 - `lib/multi-ai-config.sh` - YAML設定（16関数）
-- `lib/multi-ai-workflows.sh` - ワークフロー（13関数）
+- `lib/multi-ai-workflows.sh` - ワークフロー（14関数）
 
 | 関数名                      | 説明                          | 使用AI    | 実行時間   |
 |--------------------------|-----------------------------|---------| --------|
@@ -165,6 +165,7 @@ multi-ai-orchestrium/
 | multi-ai-coa-analyze        | Chain-of-Agents解析           | 全7AI    | 3-5分   |
 | multi-ai-consensus-review   | 合意形成レビュー                    | 全7AI    | 15-20分 |
 | multi-ai-code-review        | コードレビュー (Codex+CodeRabbit) | レビュー特化 | 10-15分 |
+| multi-ai-quad-review        | Quad統合レビュー (4ツール+6AI協調)   | 4ツール+6AI | 約30分  |
  
 
 ## 🎯 使用例
@@ -258,6 +259,76 @@ bash scripts/claude-security-review.sh --timeout 1200
 - JSON形式レポート（CVSS v3.1スコア付き）
 - Markdown形式レポート
 - SARIF形式レポート（IDE統合用）
+
+### multi-ai-quad-review - 4ツール統合レビュー（最も包括的）
+
+**NEW**: Codex、CodeRabbit、Claude包括レビュー、Claudeセキュリティレビューの4つの自動レビューツールと6AIによる協調分析を統合した最も包括的なレビューワークフローです。
+
+**基本使用法:**
+```bash
+# オーケストレーターをソース
+source scripts/orchestrate/orchestrate-multi-ai.sh
+
+# Quad Review実行（約30分）
+multi-ai-quad-review "最新コミットの徹底レビュー"
+```
+
+**実行フロー（3フェーズ）:**
+```
+Phase 1: 4つの自動レビュー（並列実行、約15分）
+  ├─ Codex自動レビュー（10分タイムアウト）
+  ├─ CodeRabbit自動レビュー（15分タイムアウト）
+  ├─ Claude包括レビュー（10分タイムアウト）
+  └─ Claudeセキュリティレビュー（15分タイムアウト）
+
+Phase 2: 6AI協調分析（約10分）
+  ├─ Gemini: セキュリティ検証
+  ├─ Amp: メンテナンス性評価
+  ├─ Qwen: 代替実装提案
+  ├─ Droid: エンタープライズ基準評価
+  ├─ Codex: 最適化提案
+  └─ Cursor: 開発者体験評価
+
+Phase 3: 統合レポート生成（約5分）
+  └─ Claude: 10個のレビュー結果を統合した包括的レポート
+
+合計所要時間: 約30分
+```
+
+**出力ファイル:**
+- `logs/multi-ai-reviews/{timestamp}-quad-review/QUAD_REVIEW_REPORT.md` - 統合レポート
+- `logs/multi-ai-reviews/{timestamp}-quad-review/output/codex/*.md` - Codexレビュー結果
+- `logs/multi-ai-reviews/{timestamp}-quad-review/output/coderabbit/*.md` - CodeRabbitレビュー結果
+- `logs/multi-ai-reviews/{timestamp}-quad-review/output/claude_comprehensive/*_claude.md` - Claude包括レビュー結果
+- `logs/multi-ai-reviews/{timestamp}-quad-review/output/claude_security/*_claude_security.md` - Claudeセキュリティレビュー結果
+- 6AI協調分析結果（各AIの分析テキストファイル）
+
+**vs Dual Review比較:**
+
+| 項目 | Dual Review | Quad Review |
+|------|------------|------------|
+| レビューツール数 | 2（Codex + CodeRabbit） | 4（+ Claude comprehensive + Claude security） |
+| セキュリティ特化レビュー | なし | ✅ Claude security review（OWASP Top 10対応） |
+| 6AI協調分析 | なし | ✅ 6AIによる多角的分析 |
+| 統合レポート生成 | なし | ✅ Claudeによる10結果統合 |
+| 所要時間 | 約15分 | 約30分 |
+| 推奨用途 | 通常のコミットレビュー | 重要リリース、セキュリティクリティカル変更、本番デプロイ前 |
+
+**推奨ワークフロー:**
+```bash
+# 1. 実装前ディスカッション
+multi-ai-discuss-before "新機能の実装計画"
+
+# 2. 実装（TDDサイクルなど）
+source scripts/tdd/tdd-multi-ai.sh
+tdd-multi-ai-cycle "新機能実装"
+
+# 3. Quad Review実行
+multi-ai-quad-review "新機能実装の徹底レビュー"
+
+# 4. レビュー結果の確認
+cat logs/multi-ai-reviews/*/QUAD_REVIEW_REPORT.md
+```
 
 ### トラブルシューティング
 

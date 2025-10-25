@@ -41,7 +41,10 @@ source "$WORKFLOWS_LIB_DIR/workflows-coa.sh"
 # Code Review Workflows (4 functions)
 source "$WORKFLOWS_LIB_DIR/workflows-review.sh"
 
-# Export all workflow functions (13 total)
+# Quad Review Workflow (1 function)
+source "$WORKFLOWS_LIB_DIR/workflows-review-quad.sh"
+
+# Export all workflow functions (14 total)
 # Core Workflows
 export -f multi-ai-full-orchestrate
 export -f multi-ai-speed-prototype
@@ -62,3 +65,6 @@ export -f multi-ai-code-review
 export -f multi-ai-coderabbit-review
 export -f multi-ai-full-review
 export -f multi-ai-dual-review
+
+# Quad Review Workflow
+export -f multi-ai-quad-review
