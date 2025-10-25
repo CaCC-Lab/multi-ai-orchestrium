@@ -127,11 +127,23 @@ multi-ai-quad-review() {
     ) &
     claude_sec_pid=$!
 
-    # Wait for all 4 reviews to complete
+    # Wait for all 4 reviews to complete (check each individually for proper error handling)
     log_info "Waiting for all 4 automated reviews to complete..."
-    wait $codex_pid $coderabbit_pid $claude_comp_pid $claude_sec_pid
 
-    log_success "All 4 automated reviews completed"
+    local phase1_failed=false
+    wait $codex_pid || { log_error "Codex review failed"; phase1_failed=true; }
+    wait $coderabbit_pid || { log_error "CodeRabbit review failed"; phase1_failed=true; }
+    wait $claude_comp_pid || { log_error "Claude comprehensive review failed"; phase1_failed=true; }
+    wait $claude_sec_pid || { log_error "Claude security review failed"; phase1_failed=true; }
+
+    if [ "$phase1_failed" = "true" ]; then
+        log_error "Phase 1: One or more automated reviews failed"
+        vibe_phase_done "Quad Automated Reviews" "1" "failed" "$(($(get_timestamp_ms) - phase1_start))"
+        vibe_pipeline_done "multi-ai-quad-review" "failed" "$(($(get_timestamp_ms) - start_time))" "4"
+        return 1
+    fi
+
+    log_success "All 4 automated reviews completed successfully"
 
     # Collect results from each tool
     local codex_results coderabbit_results claude_comp_results claude_sec_results
@@ -248,8 +260,21 @@ $quad_context" 600)
     ) &
     cursor_pid=$!
 
-    # Wait for all 6AI analysis to complete
-    wait $gemini_pid $amp_pid $qwen_pid $droid_pid $codex_analysis_pid $cursor_pid
+    # Wait for all 6AI analysis to complete (check each individually for proper error handling)
+    local phase2_failed=false
+    wait $gemini_pid || { log_error "Gemini analysis failed"; phase2_failed=true; }
+    wait $amp_pid || { log_error "Amp analysis failed"; phase2_failed=true; }
+    wait $qwen_pid || { log_error "Qwen analysis failed"; phase2_failed=true; }
+    wait $droid_pid || { log_error "Droid analysis failed"; phase2_failed=true; }
+    wait $codex_analysis_pid || { log_error "Codex analysis failed"; phase2_failed=true; }
+    wait $cursor_pid || { log_error "Cursor analysis failed"; phase2_failed=true; }
+
+    if [ "$phase2_failed" = "true" ]; then
+        log_error "Phase 2: One or more AI analyses failed"
+        vibe_phase_done "6AI Collaborative Analysis" "2" "failed" "$(($(get_timestamp_ms) - phase2_start))"
+        vibe_pipeline_done "multi-ai-quad-review" "failed" "$(($(get_timestamp_ms) - start_time))" "10"
+        return 1
+    fi
 
     # Collect 6AI results
     gemini_result=$(cat "$OUTPUT_DIR/gemini_security_validation.txt" 2>/dev/null || echo "Gemini分析結果なし")
