@@ -198,6 +198,17 @@ if [[ "${MULTI_AI_INIT:-}" != "test" ]]; then
     fi
 fi
 
+# P0.1.2: Verify yq dependency before any operations
+# yq v4.x+ is required for YAML parsing in all workflow functions
+if [[ "${MULTI_AI_INIT:-}" != "test" ]]; then
+    if ! check_yq_dependency; then
+        echo "ERROR: Critical dependency missing: yq" >&2
+        echo "Multi-AI Orchestrium requires yq v4.x or later for YAML configuration" >&2
+        echo "Install: https://github.com/mikefarah/yq#install" >&2
+        exit 1
+    fi
+fi
+
 # Execute version check on script load (not when sourced for testing)
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]] || [[ "${MULTI_AI_INIT:-}" != "test" ]]; then
     check_ai_cli_versions

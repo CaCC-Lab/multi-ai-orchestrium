@@ -76,6 +76,46 @@ invalidate_yaml_cache() {
 }
 
 # ============================================================================
+# Dependency Check Functions (P0.1.2)
+# ============================================================================
+
+# check_yq_dependency - Verify yq v4.x+ is installed for YAML parsing
+# Usage: check_yq_dependency
+# Returns: 0 if yq v4+ is available, 1 if missing or incompatible
+# Output: Error messages to structured logging if yq is not found or version incompatible
+check_yq_dependency() {
+    if ! command -v yq &>/dev/null; then
+        log_structured_error \
+            "yq command not found" \
+            "YAML parsing requires yq binary" \
+            "Install yq: https://github.com/mikefarah/yq#install"
+        return 1
+    fi
+
+    # yq version check (v4.x required)
+    local yq_version
+    yq_version=$(yq --version 2>&1 | grep -oP 'version v?\K[0-9]+' | head -1)
+
+    if [[ -z "$yq_version" ]]; then
+        log_structured_error \
+            "yq version detection failed" \
+            "Unable to parse yq --version output" \
+            "Ensure yq v4.x or later is installed: https://github.com/mikefarah/yq#install"
+        return 1
+    fi
+
+    if [[ "$yq_version" -lt 4 ]]; then
+        log_structured_error \
+            "yq version too old (v$yq_version)" \
+            "Requires yq v4.x or later" \
+            "Upgrade yq: https://github.com/mikefarah/yq#install"
+        return 1
+    fi
+
+    return 0
+}
+
+# ============================================================================
 # Profile and Workflow Functions (2 functions)
 # ============================================================================
 
