@@ -243,6 +243,139 @@ strip_version_prefix() {
 }
 
 # ============================================================
+# AI CLI Version Compatibility Checking (P1.3.1)
+# ============================================================
+
+# check_ai_version(ai_name)
+# Checks the installed version of an AI CLI tool
+#
+# Arguments:
+#   $1 - AI tool name (claude, gemini, amp, qwen, droid, codex, cursor)
+# Returns: 0 if version detected, 1 if not installed or error
+# Outputs: Version string (e.g., "1.2.3")
+check_ai_version() {
+    local ai_name="$1"
+    local version_cmd=""
+    local version_pattern='\d+\.\d+\.\d+'
+
+    # Define version commands for each AI
+    case "$ai_name" in
+        claude)
+            version_cmd="claude --version 2>&1 | head -1"
+            ;;
+        gemini)
+            version_cmd="gemini --version 2>&1 | head -1"
+            ;;
+        amp)
+            version_cmd="amp --version 2>&1 | head -1"
+            ;;
+        qwen)
+            version_cmd="qwen --version 2>&1 | head -1"
+            ;;
+        droid)
+            version_cmd="droid --version 2>&1 | head -1"
+            ;;
+        codex)
+            version_cmd="codex --version 2>&1 | head -1"
+            ;;
+        cursor)
+            version_cmd="cursor-agent --version 2>&1 | head -1"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+
+    # Execute command and extract version
+    local version_output
+    if ! version_output=$(eval "$version_cmd" 2>/dev/null); then
+        return 1  # Command failed or tool not installed
+    fi
+
+    # Extract version number using grep -oP if available, fall back to sed
+    local version
+    if version=$(echo "$version_output" | grep -oP "$version_pattern" 2>/dev/null | head -1); then
+        echo "$version"
+        return 0
+    elif version=$(echo "$version_output" | sed -n 's/.*\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/p' | head -1); then
+        echo "$version"
+        return 0
+    fi
+
+    return 1  # No version found
+}
+
+# validate_version(ai_name, current_version, min_version)
+# Validates if current version meets minimum requirement
+#
+# Arguments:
+#   $1 - AI tool name (for logging)
+#   $2 - Current version
+#   $3 - Minimum required version
+# Returns: 0 if valid, 1 if invalid
+# Outputs: Nothing (use logging in caller)
+validate_version() {
+    local ai_name="$1"
+    local current_version="$2"
+    local min_version="$3"
+
+    # Empty versions are invalid
+    if [[ -z "$current_version" ]] || [[ -z "$min_version" ]]; then
+        return 1
+    fi
+
+    # Use vercmp to compare versions
+    local cmp_result
+    cmp_result=$(vercmp "$current_version" "$min_version")
+
+    # If current < min (-1), validation fails
+    if [[ "$cmp_result" -eq -1 ]]; then
+        return 1
+    fi
+
+    return 0
+}
+
+# load_min_versions_from_yaml()
+# Loads minimum version requirements from YAML configuration
+#
+# Returns: 0 if successful, 1 if failed
+# Outputs: Associative array declaration (eval this result)
+#
+# Usage:
+#   eval "$(load_min_versions_from_yaml)"
+#   echo "${AI_MIN_VERSIONS[claude]}"
+load_min_versions_from_yaml() {
+    local yaml_file="${PROJECT_ROOT:-$(pwd)}/config/ai-cli-versions.yaml"
+
+    if [[ ! -f "$yaml_file" ]]; then
+        return 1
+    fi
+
+    # Check if yq is available
+    if ! command -v yq >/dev/null 2>&1; then
+        return 1
+    fi
+
+    # Declare associative array
+    echo "declare -A AI_MIN_VERSIONS=("
+
+    # Extract all minimum versions
+    for ai in claude gemini amp qwen droid codex cursor; do
+        local min_ver
+        if min_ver=$(yq eval ".minimum_versions.$ai" "$yaml_file" 2>/dev/null); then
+            if [[ "$min_ver" != "null" ]] && [[ -n "$min_ver" ]]; then
+                echo "  [$ai]=\"$min_ver\""
+            fi
+        fi
+    done
+
+    echo ")"
+
+    return 0
+}
+
+# ============================================================
 # Module Information
 # ============================================================
 

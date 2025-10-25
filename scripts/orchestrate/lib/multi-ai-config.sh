@@ -17,6 +17,65 @@
 set -euo pipefail
 
 # ============================================================================
+# YAML Caching Mechanism (P1.2.1)
+# ============================================================================
+
+# Global associative array for YAML result caching
+declare -A yaml_cache
+
+# Cache a YAML query result with file modification time
+cache_yaml_result() {
+    local yaml_path="$1"
+    local config_file="$2"
+    local result="$3"
+
+    # Get file modification time (cross-platform: Linux + macOS)
+    local mtime
+    if mtime=$(stat -c %Y "$config_file" 2>/dev/null); then
+        : # Linux stat succeeded
+    elif mtime=$(stat -f %m "$config_file" 2>/dev/null); then
+        : # macOS stat succeeded
+    else
+        log_error "Failed to get modification time for $config_file"
+        return 1
+    fi
+
+    # Generate cache key: ${config_file}:${yaml_path}:${mtime}
+    local cache_key="${config_file}:${yaml_path}:${mtime}"
+    yaml_cache["$cache_key"]="$result"
+}
+
+# Get cached YAML result if available
+get_cached_yaml() {
+    local yaml_path="$1"
+    local config_file="$2"
+
+    # Get file modification time
+    local mtime
+    if mtime=$(stat -c %Y "$config_file" 2>/dev/null); then
+        : # Linux
+    elif mtime=$(stat -f %m "$config_file" 2>/dev/null); then
+        : # macOS
+    else
+        return 1  # No cache if can't get mtime
+    fi
+
+    local cache_key="${config_file}:${yaml_path}:${mtime}"
+
+    if [ -n "${yaml_cache[$cache_key]+isset}" ]; then
+        echo "${yaml_cache[$cache_key]}"
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Invalidate all YAML cache entries
+invalidate_yaml_cache() {
+    yaml_cache=()
+}
+
+# ============================================================================
 # Profile and Workflow Functions (2 functions)
 # ============================================================================
 
@@ -74,8 +133,20 @@ get_phases() {
     local profile="${1:-$DEFAULT_PROFILE}"
     local workflow="$2"
     local config_file="$PROJECT_ROOT/config/multi-ai-profiles.yaml"
+    local yaml_path=".profiles.\"$profile\".workflows.\"$workflow\".phases | length"
 
-    yq eval ".profiles.\"$profile\".workflows.\"$workflow\".phases | length" "$config_file" 2>/dev/null
+    # Try cache first
+    local cached_result
+    if cached_result=$(get_cached_yaml "$yaml_path" "$config_file" 2>/dev/null); then
+        echo "$cached_result"
+        return 0
+    fi
+
+    # Cache miss: query and cache
+    local result
+    result=$(yq eval "$yaml_path" "$config_file" 2>/dev/null)
+    cache_yaml_result "$yaml_path" "$config_file" "$result"
+    echo "$result"
 }
 
 # Get phase info by index
@@ -85,13 +156,27 @@ get_phase_info() {
     local phase_idx="$3"
     local config_file="$PROJECT_ROOT/config/multi-ai-profiles.yaml"
 
-    # Get phase name
+    # Get phase name (with caching)
+    local name_path=".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].name"
     local name
-    name=$(yq eval ".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].name" "$config_file" 2>/dev/null)
+    if name=$(get_cached_yaml "$name_path" "$config_file" 2>/dev/null); then
+        : # Cache hit
+    else
+        # Cache miss: query and cache
+        name=$(yq eval "$name_path" "$config_file" 2>/dev/null)
+        cache_yaml_result "$name_path" "$config_file" "$name"
+    fi
 
-    # Check if phase has parallel execution
+    # Check if phase has parallel execution (with caching)
+    local parallel_path=".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx] | has(\"parallel\")"
     local has_parallel
-    has_parallel=$(yq eval ".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx] | has(\"parallel\")" "$config_file" 2>/dev/null)
+    if has_parallel=$(get_cached_yaml "$parallel_path" "$config_file" 2>/dev/null); then
+        : # Cache hit
+    else
+        # Cache miss: query and cache
+        has_parallel=$(yq eval "$parallel_path" "$config_file" 2>/dev/null)
+        cache_yaml_result "$parallel_path" "$config_file" "$has_parallel"
+    fi
 
     echo "$name|$has_parallel"
 }
@@ -102,11 +187,19 @@ get_phase_ai() {
     local workflow="$2"
     local phase_idx="$3"
     local config_file="$PROJECT_ROOT/config/multi-ai-profiles.yaml"
+    local yaml_path=".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].ai"
 
-    # Execute and capture result using properly quoted profile/workflow names
+    # Try cache first
+    local cached_result
+    if cached_result=$(get_cached_yaml "$yaml_path" "$config_file" 2>/dev/null); then
+        echo "$cached_result"
+        return 0
+    fi
+
+    # Cache miss: query and cache
     local result
-    result=$(yq eval ".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].ai" "$config_file" 2>/dev/null)
-
+    result=$(yq eval "$yaml_path" "$config_file" 2>/dev/null)
+    cache_yaml_result "$yaml_path" "$config_file" "$result"
     echo "$result"
 }
 
@@ -116,8 +209,20 @@ get_phase_role() {
     local workflow="$2"
     local phase_idx="$3"
     local config_file="$PROJECT_ROOT/config/multi-ai-profiles.yaml"
+    local yaml_path=".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].role"
 
-    yq eval ".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].role" "$config_file" 2>/dev/null
+    # Try cache first
+    local cached_result
+    if cached_result=$(get_cached_yaml "$yaml_path" "$config_file" 2>/dev/null); then
+        echo "$cached_result"
+        return 0
+    fi
+
+    # Cache miss: query and cache
+    local result
+    result=$(yq eval "$yaml_path" "$config_file" 2>/dev/null)
+    cache_yaml_result "$yaml_path" "$config_file" "$result"
+    echo "$result"
 }
 
 # Get phase timeout
@@ -126,9 +231,24 @@ get_phase_timeout() {
     local workflow="$2"
     local phase_idx="$3"
     local config_file="$PROJECT_ROOT/config/multi-ai-profiles.yaml"
+    local yaml_path=".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].timeout"
 
+    # Try cache first
+    local cached_result
+    if cached_result=$(get_cached_yaml "$yaml_path" "$config_file" 2>/dev/null); then
+        local timeout="$cached_result"
+        if [ "$timeout" = "null" ] || [ -z "$timeout" ]; then
+            echo "120"
+        else
+            echo "$timeout"
+        fi
+        return 0
+    fi
+
+    # Cache miss: query and cache
     local timeout
-    timeout=$(yq eval ".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].timeout" "$config_file" 2>/dev/null)
+    timeout=$(yq eval "$yaml_path" "$config_file" 2>/dev/null)
+    cache_yaml_result "$yaml_path" "$config_file" "$timeout"
 
     if [ "$timeout" = "null" ] || [ -z "$timeout" ]; then
         echo "120"  # Default timeout
@@ -147,8 +267,20 @@ get_parallel_count() {
     local workflow="$2"
     local phase_idx="$3"
     local config_file="$PROJECT_ROOT/config/multi-ai-profiles.yaml"
+    local yaml_path=".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].parallel | length"
 
-    yq eval ".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].parallel | length" "$config_file" 2>/dev/null
+    # Try cache first
+    local cached_result
+    if cached_result=$(get_cached_yaml "$yaml_path" "$config_file" 2>/dev/null); then
+        echo "$cached_result"
+        return 0
+    fi
+
+    # Cache miss: query and cache
+    local result
+    result=$(yq eval "$yaml_path" "$config_file" 2>/dev/null)
+    cache_yaml_result "$yaml_path" "$config_file" "$result"
+    echo "$result"
 }
 
 # Get parallel phase AI by index
@@ -158,8 +290,20 @@ get_parallel_ai() {
     local phase_idx="$3"
     local parallel_idx="$4"
     local config_file="$PROJECT_ROOT/config/multi-ai-profiles.yaml"
+    local yaml_path=".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].parallel[$parallel_idx].ai"
 
-    yq eval ".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].parallel[$parallel_idx].ai" "$config_file" 2>/dev/null
+    # Try cache first
+    local cached_result
+    if cached_result=$(get_cached_yaml "$yaml_path" "$config_file" 2>/dev/null); then
+        echo "$cached_result"
+        return 0
+    fi
+
+    # Cache miss: query and cache
+    local result
+    result=$(yq eval "$yaml_path" "$config_file" 2>/dev/null)
+    cache_yaml_result "$yaml_path" "$config_file" "$result"
+    echo "$result"
 }
 
 # Get parallel phase role
@@ -169,8 +313,20 @@ get_parallel_role() {
     local phase_idx="$3"
     local parallel_idx="$4"
     local config_file="$PROJECT_ROOT/config/multi-ai-profiles.yaml"
+    local yaml_path=".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].parallel[$parallel_idx].role"
 
-    yq eval ".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].parallel[$parallel_idx].role" "$config_file" 2>/dev/null
+    # Try cache first
+    local cached_result
+    if cached_result=$(get_cached_yaml "$yaml_path" "$config_file" 2>/dev/null); then
+        echo "$cached_result"
+        return 0
+    fi
+
+    # Cache miss: query and cache
+    local result
+    result=$(yq eval "$yaml_path" "$config_file" 2>/dev/null)
+    cache_yaml_result "$yaml_path" "$config_file" "$result"
+    echo "$result"
 }
 
 # Get parallel phase timeout
@@ -180,9 +336,24 @@ get_parallel_timeout() {
     local phase_idx="$3"
     local parallel_idx="$4"
     local config_file="$PROJECT_ROOT/config/multi-ai-profiles.yaml"
+    local yaml_path=".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].parallel[$parallel_idx].timeout"
 
+    # Try cache first
+    local cached_result
+    if cached_result=$(get_cached_yaml "$yaml_path" "$config_file" 2>/dev/null); then
+        local timeout="$cached_result"
+        if [ "$timeout" = "null" ] || [ -z "$timeout" ]; then
+            echo "120"
+        else
+            echo "$timeout"
+        fi
+        return 0
+    fi
+
+    # Cache miss: query and cache
     local timeout
-    timeout=$(yq eval ".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].parallel[$parallel_idx].timeout" "$config_file" 2>/dev/null)
+    timeout=$(yq eval "$yaml_path" "$config_file" 2>/dev/null)
+    cache_yaml_result "$yaml_path" "$config_file" "$timeout"
 
     if [ "$timeout" = "null" ] || [ -z "$timeout" ]; then
         echo "120"
@@ -198,8 +369,20 @@ get_parallel_name() {
     local phase_idx="$3"
     local parallel_idx="$4"
     local config_file="$PROJECT_ROOT/config/multi-ai-profiles.yaml"
+    local yaml_path=".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].parallel[$parallel_idx].name"
 
-    yq eval ".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].parallel[$parallel_idx].name" "$config_file" 2>/dev/null
+    # Try cache first
+    local cached_result
+    if cached_result=$(get_cached_yaml "$yaml_path" "$config_file" 2>/dev/null); then
+        echo "$cached_result"
+        return 0
+    fi
+
+    # Cache miss: query and cache
+    local result
+    result=$(yq eval "$yaml_path" "$config_file" 2>/dev/null)
+    cache_yaml_result "$yaml_path" "$config_file" "$result"
+    echo "$result"
 }
 
 # Get parallel phase blocking flag (defaults to true if unspecified)
@@ -209,9 +392,24 @@ get_parallel_blocking() {
     local phase_idx="$3"
     local parallel_idx="$4"
     local config_file="$PROJECT_ROOT/config/multi-ai-profiles.yaml"
+    local yaml_path=".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].parallel[$parallel_idx].blocking"
 
+    # Try cache first
+    local cached_result
+    if cached_result=$(get_cached_yaml "$yaml_path" "$config_file" 2>/dev/null); then
+        local blocking="$cached_result"
+        if [ "$blocking" = "null" ] || [ -z "$blocking" ]; then
+            echo "true"
+        else
+            echo "$blocking"
+        fi
+        return 0
+    fi
+
+    # Cache miss: query and cache
     local blocking
-    blocking=$(yq eval ".profiles.\"$profile\".workflows.\"$workflow\".phases[$phase_idx].parallel[$parallel_idx].blocking" "$config_file" 2>/dev/null)
+    blocking=$(yq eval "$yaml_path" "$config_file" 2>/dev/null)
+    cache_yaml_result "$yaml_path" "$config_file" "$blocking"
 
     if [ "$blocking" = "null" ] || [ -z "$blocking" ]; then
         echo "true"
