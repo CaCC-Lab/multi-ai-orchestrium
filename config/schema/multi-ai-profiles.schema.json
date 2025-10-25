@@ -1,0 +1,141 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://multi-ai-orchestrium.example.com/schemas/multi-ai-profiles.json",
+  "title": "Multi-AI Orchestrium Profiles Configuration",
+  "description": "JSON Schema for validating multi-ai-profiles.yaml configuration",
+  "type": "object",
+  "required": ["profiles"],
+  "properties": {
+    "execution": {
+      "type": "object",
+      "description": "Global execution settings",
+      "properties": {
+        "max_parallel_jobs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 4
+        },
+        "job_pool": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "max_concurrent": {"type": "integer", "minimum": 1, "maximum": 20},
+            "resource_monitoring": {"type": "boolean"}
+          }
+        }
+      }
+    },
+    "file_based_prompts": {
+      "type": "object",
+      "description": "File-based prompt routing configuration",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "thresholds": {
+          "type": "object",
+          "properties": {
+            "small": {"type": "integer", "minimum": 1},
+            "medium": {"type": "integer", "minimum": 1},
+            "large": {"type": "integer", "minimum": 1}
+          }
+        },
+        "routing": {
+          "type": "object",
+          "properties": {
+            "auto": {"type": "boolean"},
+            "prefer_file": {"type": "boolean"}
+          }
+        },
+        "security": {
+          "type": "object",
+          "properties": {
+            "file_permissions": {"type": "string", "pattern": "^[0-7]{3}$"},
+            "auto_cleanup": {"type": "boolean"}
+          }
+        }
+      }
+    },
+    "profiles": {
+      "type": "object",
+      "description": "AI workflow profiles",
+      "patternProperties": {
+        "^[a-zA-Z0-9_-]+$": {
+          "type": "object",
+          "required": ["workflows"],
+          "properties": {
+            "description": {"type": "string"},
+            "workflows": {
+              "type": "object",
+              "description": "Workflow definitions",
+              "patternProperties": {
+                "^[a-zA-Z0-9_-]+$": {
+                  "type": "object",
+                  "required": ["phases"],
+                  "properties": {
+                    "description": {"type": "string"},
+                    "phases": {
+                      "type": "array",
+                      "description": "Sequential or parallel execution phases",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "required": ["name"],
+                        "oneOf": [
+                          {
+                            "required": ["name", "ai", "role", "timeout"],
+                            "properties": {
+                              "name": {"type": "string", "minLength": 1},
+                              "ai": {
+                                "type": "string",
+                                "enum": ["claude", "gemini", "amp", "qwen", "droid", "codex", "cursor"]
+                              },
+                              "role": {"type": "string", "minLength": 1},
+                              "timeout": {"type": "integer", "minimum": 1, "maximum": 3600},
+                              "blocking": {"type": "boolean"},
+                              "input_from": {
+                                "type": "array",
+                                "items": {"type": "string"}
+                              }
+                            }
+                          },
+                          {
+                            "required": ["name", "parallel"],
+                            "properties": {
+                              "name": {"type": "string", "minLength": 1},
+                              "parallel": {
+                                "type": "array",
+                                "minItems": 2,
+                                "items": {
+                                  "type": "object",
+                                  "required": ["name", "ai", "role", "timeout"],
+                                  "properties": {
+                                    "name": {"type": "string", "minLength": 1},
+                                    "ai": {
+                                      "type": "string",
+                                      "enum": ["claude", "gemini", "amp", "qwen", "droid", "codex", "cursor"]
+                                    },
+                                    "role": {"type": "string", "minLength": 1},
+                                    "timeout": {"type": "integer", "minimum": 1, "maximum": 3600},
+                                    "blocking": {"type": "boolean"},
+                                    "input_from": {
+                                      "type": "array",
+                                      "items": {"type": "string"}
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

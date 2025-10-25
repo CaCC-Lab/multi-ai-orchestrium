@@ -84,8 +84,10 @@ load_multi_ai_profile() {
     local profile="${1:-$DEFAULT_PROFILE}"
 
     if ! command -v yq >/dev/null 2>&1; then
-        log_error "yq is required for YAML parsing"
-        log_info "Install: https://github.com/mikefarah/yq#install"
+        log_structured_error \
+            "yq command not found - YAML parsing unavailable" \
+            "yq is not installed or not in PATH" \
+            "Install yq: https://github.com/mikefarah/yq#install (brew install yq, or download binary)"
         return 1
     fi
 

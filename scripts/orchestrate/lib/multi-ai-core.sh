@@ -615,3 +615,107 @@ sem_cleanup() {
 
     return 0
 }
+
+# ============================================================================
+# Structured Error Handling (P1.4.1 - Comprehensive Error Handling)
+# ============================================================================
+
+# Directory for error logs
+MULTI_AI_ERROR_LOG_DIR="${MULTI_AI_ERROR_LOG_DIR:-logs/errors}"
+
+# Ensure error log directory exists
+mkdir -p "$MULTI_AI_ERROR_LOG_DIR" 2>/dev/null || true
+
+# log_structured_error - Logs errors in structured what/why/how format
+# Usage: log_structured_error "what" "why" "how"
+# Arguments:
+#   $1: what - What happened (error description)
+#   $2: why  - Why it happened (root cause)
+#   $3: how  - How to fix it (remediation steps)
+# Outputs: JSON-formatted error log to stderr and logs/errors/YYYYMMDD.jsonl
+log_structured_error() {
+    local what="${1:-Unknown error}"
+    local why="${2:-Unknown cause}"
+    local how="${3:-No remediation available}"
+    local timestamp=$(get_timestamp_ms)
+    local date_str=$(date +%Y%m%d)
+    local error_log="$MULTI_AI_ERROR_LOG_DIR/${date_str}.jsonl"
+
+    # Create error log directory if it doesn't exist
+    mkdir -p "$MULTI_AI_ERROR_LOG_DIR" 2>/dev/null || true
+
+    # Build JSON error entry
+    local json_error=$(cat <<EOF
+{
+  "timestamp_ms": $timestamp,
+  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)",
+  "what": $(printf '%s' "$what" | jq -Rs .),
+  "why": $(printf '%s' "$why" | jq -Rs .),
+  "how": $(printf '%s' "$how" | jq -Rs .),
+  "script": "${BASH_SOURCE[2]:-unknown}",
+  "function": "${FUNCNAME[2]:-main}",
+  "line": ${BASH_LINENO[1]:-0},
+  "pid": $$,
+  "user": "${USER:-unknown}"
+}
+EOF
+)
+
+    # Output to stderr with color formatting
+    echo -e "${RED}❌ ERROR:${NC}" >&2
+    echo -e "  ${YELLOW}What:${NC} $what" >&2
+    echo -e "  ${YELLOW}Why:${NC}  $why" >&2
+    echo -e "  ${YELLOW}How:${NC}  $how" >&2
+    echo -e "  ${CYAN}Location:${NC} ${BASH_SOURCE[2]:-unknown}:${FUNCNAME[2]:-main}:${BASH_LINENO[1]:-0}" >&2
+
+    # Append JSON to error log file
+    echo "$json_error" >> "$error_log" 2>/dev/null || {
+        echo -e "${YELLOW}⚠️  Failed to write error log to $error_log${NC}" >&2
+    }
+
+    # Also log to VibeLogger if available
+    if declare -f vibe_log >/dev/null 2>&1; then
+        vibe_log "error" "structured_error" "{\"what\":\"$what\",\"why\":\"$why\",\"how\":\"$how\"}" "$what" "[]" "multi-ai-core"
+    fi
+
+    return 0
+}
+
+# print_stack_trace - Prints full Bash call stack for debugging
+# Usage: print_stack_trace
+# Outputs: Stack trace to stderr showing function call chain
+print_stack_trace() {
+    local frame=0
+    echo -e "${CYAN}Stack trace:${NC}" >&2
+
+    while caller $frame >&2 2>/dev/null; do
+        ((frame++))
+    done
+
+    # If caller failed (no stack), print current location
+    if [ $frame -eq 0 ]; then
+        echo -e "  ${BASH_SOURCE[1]:-unknown}:${FUNCNAME[1]:-main}:${BASH_LINENO[0]:-0}" >&2
+    fi
+
+    return 0
+}
+
+# handle_critical_error - Comprehensive critical error handler with stack trace
+# Usage: handle_critical_error "error_message" ["exit_code"]
+# Arguments:
+#   $1: error_message - Description of the critical error
+#   $2: exit_code (optional) - Exit code (default: 1)
+# Behavior: Logs structured error, prints stack trace, exits script
+handle_critical_error() {
+    local error_message="${1:-Critical error occurred}"
+    local exit_code="${2:-1}"
+
+    log_structured_error \
+        "$error_message" \
+        "Critical failure in Multi-AI orchestration" \
+        "Check logs in $MULTI_AI_ERROR_LOG_DIR for details. Review stack trace below."
+
+    print_stack_trace
+
+    exit "$exit_code"
+}

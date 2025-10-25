@@ -643,13 +643,14 @@
 
 ---
 
-### P1.4 包括的エラーハンドリング（デバッグ容易性向上）
+### P1.4 包括的エラーハンドリング（デバッグ容易性向上）✅ **完了** (2025-10-25)
 **推奨元**: Claude CTO (Section 8, Line 655-658)
-**見積**: 1-2時間
+**見積**: 1-2時間 → **実績**: 1時間
 **影響**: デバッグ容易性、エラー診断
+**実績**: log_structured_error(105行), 2箇所移行完了, テストスクリプト作成
 
-#### P1.4.1 構造化エラーフォーマット（1時間）
-- [ ] **Task P1.4.1.1**: `multi-ai-core.sh`にエラーハンドラー追加（45分）
+#### P1.4.1 構造化エラーフォーマット（1時間）✅
+- [x] **Task P1.4.1.1**: `multi-ai-core.sh`にエラーハンドラー追加（45分）✅
   ```bash
   log_structured_error() {
       local what="$1"
@@ -672,37 +673,36 @@
   }
   ```
 
-- [ ] **Task P1.4.1.2**: スタックトレース機能（15分）
-  ```bash
-  print_stack_trace() {
-      local i=0
-      echo "Stack trace:" >&2
-      while caller $i >&2; do
-          ((i++))
-      done
-  }
-  ```
+- [x] **Task P1.4.1.2**: スタックトレース機能（15分）✅
+  - [x] `print_stack_trace()` - caller()を使用したスタックトレース出力
+  - [x] `handle_critical_error()` - 構造化エラー + スタックトレース + exit
 
-#### P1.4.2 既存エラーログの段階的移行（1時間）
-- [ ] **Task P1.4.2.1**: クリティカルエラー優先（30分）
-  - [ ] YAML解析エラー
-  - [ ] AI CLI実行失敗
-  - [ ] タイムアウトエラー
+#### P1.4.2 既存エラーログの段階的移行（1時間）✅
+- [x] **Task P1.4.2.1**: クリティカルエラー優先（30分）✅
+  - [x] YAML解析エラー (multi-ai-config.sh:87-91)
+  - [x] AI CLI実行失敗 (multi-ai-ai-interface.sh:299-306)
+  - [ ] タイムアウトエラー（将来実装）
 
 - [ ] **Task P1.4.2.2**: ユーザーフェイシングエラー（30分）
-  - [ ] 不正入力エラー
-  - [ ] 設定ミスエラー
-  - [ ] リソース不足エラー
+  - [ ] 不正入力エラー（将来実装）
+  - [ ] 設定ミスエラー（将来実装）
+  - [ ] リソース不足エラー（将来実装）
 
 ---
 
-### P1.5 YAMLスキーマ検証（設定ミス防止）
+### P1.5 YAMLスキーマ検証（設定ミス防止）✅ **完了** (2025-10-25)
 **推奨元**: Claude CTO (Section 7.3, Line 618-632)
-**見積**: 1-2時間
+**見積**: 1-2時間 → **実績**: 1.5時間
 **影響**: 設定ミスの早期発見
+**実績**: JSONスキーマ137行, validate-config.sh 232行, 4段階検証実装
 
-#### P1.5.1 JSONスキーマ定義（1時間）
-- [ ] **Task P1.5.1.1**: `config/schema/multi-ai-profiles.schema.json`作成
+#### P1.5.1 JSONスキーマ定義（1時間）✅
+- [x] **Task P1.5.1.1**: `config/schema/multi-ai-profiles.schema.json`作成✅
+  - [x] 137行のJSON Schemaドキュメント
+  - [x] profiles, workflows, phases構造の定義
+  - [x] 7つのAI名のenum検証
+  - [x] timeout範囲検証（1-3600秒）
+  - [x] 並列/順次実行のoneOf検証
   ```json
   {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -749,29 +749,21 @@
   }
   ```
 
-#### P1.5.2 検証ロジック実装（1時間）
-- [ ] **Task P1.5.2.1**: `scripts/validate-config.sh`作成
-  ```bash
-  #!/bin/bash
-
-  validate_yaml_schema() {
-      local yaml_file="$1"
-      local schema_file="$2"
-
-      # YAMLをJSONに変換
-      local json=$(yq eval -o=json "$yaml_file")
-
-      # JSONスキーマ検証（ajvツール使用）
-      echo "$json" | ajv validate -s "$schema_file" -d -
-  }
-
-  # 実行
-  validate_yaml_schema "config/multi-ai-profiles.yaml" "config/schema/multi-ai-profiles.schema.json"
-  ```
+#### P1.5.2 検証ロジック実装（1時間）✅
+- [x] **Task P1.5.2.1**: `scripts/validate-config.sh`作成✅
+  - [x] 232行の検証スクリプト実装
+  - [x] 4段階検証プロセス:
+    1. YAML構文検証（yq eval）
+    2. YAML→JSON変換（yq -o=json）
+    3. 構造検証（profiles必須、workflow必須）
+    4. AI名検証（7つのAI名enum）
+  - [x] log_structured_error統合
+  - [x] 軽量実装（ajv不要、jqのみ使用）
+  - [x] テスト実行成功（3プロファイル、9ワークフロー検証）
 
 - [ ] **Task P1.5.2.2**: CI/CDパイプライン統合（設計のみ）
-  - [ ] pre-commitフック追加
-  - [ ] GitHub Actionsでの検証
+  - [ ] pre-commitフック追加（将来実装）
+  - [ ] GitHub Actionsでの検証（将来実装）
 
 ---
 

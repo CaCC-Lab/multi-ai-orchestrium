@@ -296,7 +296,10 @@ call_ai_with_context() {
         # Create secure temporary file
         local prompt_file
         if ! prompt_file=$(create_secure_prompt_file "$ai_name" "$context"); then
-            log_error "[$ai_name] File creation failed, falling back to truncated command-line"
+            log_structured_error \
+                "[$ai_name] Failed to create temporary file for large prompt" \
+                "Disk space, permissions, or /tmp not writable" \
+                "Check: df -h /tmp && ls -ld /tmp. Falling back to truncated (${size_threshold}B) prompt"
             # Fallback: Truncate and use command-line
             local truncated="${context:0:$size_threshold}"
             call_ai "$ai_name" "$truncated" "$timeout" "$output_file"
