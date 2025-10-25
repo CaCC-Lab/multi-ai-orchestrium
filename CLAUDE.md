@@ -25,11 +25,15 @@ multi-ai-orchestrium/
 ├── scripts/
 │   ├── orchestrate/
 │   │   ├── orchestrate-multi-ai.sh       # メインオーケストレーター（49関数）
-│   │   └── lib/                          # モジュール化ライブラリ（4ファイル）
+│   │   └── lib/                          # モジュール化ライブラリ（8ファイル）
 │   │       ├── multi-ai-core.sh          # ロギング、タイムスタンプ、ユーティリティ（15関数）
 │   │       ├── multi-ai-ai-interface.sh  # AI呼び出し、フォールバック（5関数）
 │   │       ├── multi-ai-config.sh        # YAML解析、フェーズ実行（16関数）
-│   │       └── multi-ai-workflows.sh     # ワークフロー実装（13関数）
+│   │       ├── multi-ai-workflows.sh     # ワークフローローダー（64行、以下4モジュールを統合）
+│   │       ├── workflows-core.sh         # コアワークフロー（375行、6関数）
+│   │       ├── workflows-discussion.sh   # ディスカッションワークフロー（55行、2関数）
+│   │       ├── workflows-coa.sh          # Chain-of-Agentsワークフロー（36行、1関数）
+│   │       └── workflows-review.sh       # コードレビューワークフロー（1533行、4関数）
 │   ├── tdd/
 │   │   ├── tdd-multi-ai.sh               # TDDサイクルオーケストレーション
 │   │   └── tdd-multi-ai-phases.sh        # 6フェーズTDD実装
