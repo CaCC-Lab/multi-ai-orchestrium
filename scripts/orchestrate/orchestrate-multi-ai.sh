@@ -92,6 +92,103 @@ fi
 source "$LIB_DIR/multi-ai-workflows.sh"
 
 # ============================================================================
+# AI CLI Version Compatibility Check (P1.3)
+# ============================================================================
+
+# check_ai_cli_versions()
+# Validates that installed AI CLI versions meet minimum requirements
+#
+# Behavior:
+#   - Loads minimum versions from config/ai-cli-versions.yaml
+#   - Checks each AI CLI version using check_ai_version() from version-checker.sh
+#   - Compares against minimum requirements using validate_version()
+#   - Warns if incompatible versions detected (unless SKIP_VERSION_CHECK=1)
+#
+# Returns: 0 (always continues, warnings only)
+check_ai_cli_versions() {
+    # Check if version check should be skipped
+    if [[ "${SKIP_VERSION_CHECK:-}" == "1" ]]; then
+        log_info "Version check bypassed (SKIP_VERSION_CHECK=1)"
+        return 0
+    fi
+
+    local version_yaml="$PROJECT_ROOT/config/ai-cli-versions.yaml"
+
+    # Check if YAML file exists
+    if [[ ! -f "$version_yaml" ]]; then
+        log_warning "Version check skipped: $version_yaml not found"
+        return 0
+    fi
+
+    # Check if yq is available
+    if ! command -v yq >/dev/null 2>&1; then
+        log_warning "Version check skipped: yq not installed"
+        return 0
+    fi
+
+    # Load version-checker module if not already loaded
+    local version_checker="$PROJECT_ROOT/src/core/version-checker.sh"
+    if [[ -f "$version_checker" ]]; then
+        # shellcheck source=src/core/version-checker.sh
+        source "$version_checker"
+    else
+        log_warning "Version check skipped: version-checker.sh not found"
+        return 0
+    fi
+
+    local all_compatible=true
+    local incompatible_count=0
+    local checked_count=0
+
+    # Check each AI tool version
+    for ai in $ALL_AIS; do
+        ((checked_count++))
+
+        # Get minimum version from YAML
+        local min_version
+        min_version=$(yq eval ".minimum_versions.$ai" "$version_yaml" 2>/dev/null)
+
+        # Skip if no minimum version defined
+        if [[ -z "$min_version" ]] || [[ "$min_version" == "null" ]]; then
+            continue
+        fi
+
+        # Get installed version
+        local current_version
+        if current_version=$(check_ai_version "$ai" 2>/dev/null); then
+            # Validate version compatibility
+            if validate_version "$ai" "$current_version" "$min_version"; then
+                log_info "✅ $ai: $current_version (>= $min_version)"
+            else
+                log_warning "⚠️  $ai: $current_version < minimum $min_version"
+                all_compatible=false
+                ((incompatible_count++))
+            fi
+        else
+            log_warning "⚠️  $ai: not installed (minimum $min_version required)"
+            all_compatible=false
+            ((incompatible_count++))
+        fi
+    done
+
+    # Display summary
+    if [[ "$all_compatible" == "true" ]]; then
+        log_success "All $checked_count AI CLIs meet minimum version requirements"
+    else
+        log_warning "$incompatible_count/$checked_count AI CLIs have version issues"
+        log_warning "Run: bash check-multi-ai-tools.sh for details"
+        log_warning "To bypass: SKIP_VERSION_CHECK=1 source scripts/orchestrate/orchestrate-multi-ai.sh"
+    fi
+
+    return 0
+}
+
+# Execute version check on script load (not when sourced for testing)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]] || [[ "${MULTI_AI_INIT:-}" != "test" ]]; then
+    check_ai_cli_versions
+fi
+
+# ============================================================================
 # Initialization Complete
 # ============================================================================
 

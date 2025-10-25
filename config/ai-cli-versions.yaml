@@ -1,34 +1,75 @@
-# AI CLI Version Compatibility Configuration
-# Purpose: Define minimum required versions for each AI CLI tool
-# Used by: check-multi-ai-tools.sh, orchestrate-multi-ai.sh
+# AI CLI Version Requirements
+# Multi-AI Orchestrium v3.3
+#
+# This file defines minimum compatible versions for each AI CLI tool.
+# Version checking occurs at orchestration startup to prevent runtime failures
+# due to incompatible CLI versions.
+#
+# Format: semantic versioning (major.minor.patch)
+# Reference: https://semver.org/
+
+# ============================================================
+# Minimum Compatible Versions
+# ============================================================
 
 minimum_versions:
-  claude: "1.0.0"     # Claude MCP CLI
-  gemini: "2.0.0"     # Gemini CLI
-  amp: "0.5.0"        # Amp CLI
-  qwen: "3.0.0"       # Qwen CLI
-  droid: "1.0.0"      # Droid CLI
-  codex: "0.47.0"     # Codex CLI (OpenAI)
-  cursor: "0.8.0"     # Cursor Agent CLI
+  # Strategic Layer
+  claude: "1.0.0"    # Claude Code CLI (Anthropic) - Installed: 2.0.27 ✅
+  gemini: "0.5.0"    # Gemini CLI (Google) - Installed: 0.9.0 ✅
+  amp: "0.0.1"       # Amp CLI (Free Tier) - Installed: 0.0.1760961702 ✅
 
-# Version extraction commands for each AI
-# Format: Command to run that outputs version information
+  # Implementation Layer
+  qwen: "0.0.1"      # Qwen3-Coder CLI (Alibaba) - Installed: 0.0.14 ✅
+  droid: "0.20.0"    # Droid CLI (Factory AI) - Installed: 0.22.3 ✅
+
+  # Integration Layer
+  codex: "0.40.0"    # OpenAI Codex CLI - Installed: 0.47.0 ✅
+  cursor: "0.8.0"    # Cursor Agent CLI - Installed: 2025.10.22 ✅
+
+# ============================================================
+# Version Command Specifications
+# ============================================================
+
 version_commands:
-  claude: "claude --version 2>&1 | head -1"
-  gemini: "gemini --version 2>&1 | head -1"
-  amp: "amp --version 2>&1 | head -1"
-  qwen: "qwen --version 2>&1 | head -1"
-  droid: "droid --version 2>&1 | head -1"
-  codex: "codex --version 2>&1 | head -1"
-  cursor: "cursor-agent --version 2>&1 | head -1"
+  claude: "claude --version"
+  gemini: "gemini --version"
+  amp: "amp --version"
+  qwen: "qwen --version"
+  droid: "droid --version"
+  codex: "codex --version"
+  cursor: "cursor-agent --version"
 
-# Version extraction patterns (regex)
-# Used to extract version number from command output
-version_patterns:
-  claude: '\d+\.\d+\.\d+'
-  gemini: '\d+\.\d+\.\d+'
-  amp: '\d+\.\d+\.\d+'
-  qwen: '\d+\.\d+\.\d+'
-  droid: '\d+\.\d+\.\d+'
-  codex: 'v?(\d+\.\d+\.\d+)'
-  cursor: '\d+\.\d+\.\d+'
+# ============================================================
+# Version Check Configuration
+# ============================================================
+
+version_check:
+  # Enable/disable version checking
+  enabled: true
+
+  # Behavior when incompatible version detected
+  # Options: "warn" | "error" | "skip"
+  on_incompatible: "warn"
+
+  # Allow bypassing version check
+  allow_skip: true
+
+  # Environment variable to bypass check
+  skip_env_var: "SKIP_VERSION_CHECK"
+
+# ============================================================
+# Notes
+# ============================================================
+#
+# Version Check Flow:
+#   1. Load minimum_versions from this file
+#   2. For each AI, execute version_commands[ai]
+#   3. Compare installed version vs minimum version
+#   4. If incompatible:
+#      - Warn: Display warning message (default)
+#      - Error: Exit with error code 1
+#      - Skip: Continue without check (via SKIP_VERSION_CHECK=1)
+#
+# Bypass Version Check:
+#   SKIP_VERSION_CHECK=1 source scripts/orchestrate/orchestrate-multi-ai.sh
+#

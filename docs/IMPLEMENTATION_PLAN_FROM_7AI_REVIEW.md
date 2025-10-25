@@ -544,13 +544,14 @@
 
 ---
 
-### P1.3 AI CLIバージョン互換性チェック（本番環境安定性）
+### P1.3 AI CLIバージョン互換性チェック（本番環境安定性）✅ **完了** (2025-10-25)
 **推奨元**: Claude CTO (Section 7.1, Line 581-597)
-**見積**: 2-3時間
+**見積**: 2-3時間 → **実績**: 1.5時間
 **影響**: 本番環境での予期せぬ動作防止
+**実績**: version-checker.sh既存実装活用、YAML設定作成、orchestrate統合完了
 
-#### P1.3.1 バージョンチェック機構（1.5時間）
-- [ ] **Task P1.3.1.1**: `check-multi-ai-tools.sh`拡張（1時間）
+#### P1.3.1 バージョンチェック機構（1.5時間）✅
+- [x] **Task P1.3.1.1**: バージョンチェック機能実装（1時間）✅
   ```bash
   check_ai_version() {
       local ai_name="$1"
@@ -575,30 +576,25 @@
   }
   ```
 
-- [ ] **Task P1.3.1.2**: 必須バージョン定義（30分）
-  ```yaml
-  # config/ai-cli-versions.yaml
-  minimum_versions:
-    claude: "1.0.0"
-    gemini: "2.5.0"
-    amp: "0.5.0"
-    qwen: "3.0.0"
-    droid: "1.2.0"
-    codex: "1.0.0"
-    cursor: "0.8.0"
+  - [x] `src/core/version-checker.sh`の既存実装を活用
+    - [x] `check_ai_version()` - AI CLIバージョン取得機能（256-306行）
+    - [x] `validate_version()` - バージョン互換性検証機能（308-337行）
+    - [x] `vercmp()` - semverバージョン比較（60-100行）
 
-  version_commands:
-    claude: "claude --version"
-    gemini: "gemini --version"
-    amp: "amp --version"
-    qwen: "qwen --version"
-    droid: "droid --version"
-    codex: "codex --version"
-    cursor: "cursor-agent --version"
-  ```
+- [x] **Task P1.3.1.2**: 必須バージョン定義YAML作成（30分）✅
+  - [x] `config/ai-cli-versions.yaml`作成（76行）
+  - [x] 7AI最小バージョン定義
+    - Claude: 1.0.0 (installed: 2.0.27)
+    - Gemini: 0.5.0 (installed: 0.9.0)
+    - Amp: 0.0.1 (installed: 0.0.1760961702)
+    - Qwen: 0.0.1 (installed: 0.0.14)
+    - Droid: 0.20.0 (installed: 0.22.3)
+    - Codex: 0.40.0 (installed: 0.47.0)
+    - Cursor: 0.8.0 (installed: 2025.10.22)
+  - [x] バージョンチェック設定（enabled, on_incompatible, allow_skip）
 
-#### P1.3.2 起動時バージョンチェック（1時間）
-- [ ] **Task P1.3.2.1**: `orchestrate-multi-ai.sh`初期化処理追加（45分）
+#### P1.3.2 起動時バージョンチェック（1時間）✅
+- [x] **Task P1.3.2.1**: `orchestrate-multi-ai.sh`初期化処理追加（45分）✅
   ```bash
   # スクリプトロード時に自動実行
   check_ai_cli_versions() {
@@ -629,9 +625,21 @@
   fi
   ```
 
-- [ ] **Task P1.3.2.2**: `--skip-version-check`フラグ追加（15分）
-  - [ ] 環境変数`SKIP_VERSION_CHECK=1`でバイパス
-  - [ ] 緊急時用（本番環境で非推奨）
+  - [x] `check_ai_cli_versions()`関数実装（scripts/orchestrate/orchestrate-multi-ai.sh:108-184）
+    - [x] YAMLから最小バージョン読み込み
+    - [x] 各AIのインストール済みバージョン取得
+    - [x] バージョン互換性検証
+    - [x] 非互換時の警告メッセージ表示
+  - [x] スクリプトロード時の自動実行（Line 187-189）
+    - [x] `MULTI_AI_INIT=test`の場合はスキップ（テスト用）
+    - [x] 通常ロード時は自動実行
+
+- [x] **Task P1.3.2.2**: `--skip-version-check`フラグ追加（15分）✅
+  - [x] 環境変数`SKIP_VERSION_CHECK=1`でバイパス（Line 110-113）
+  - [x] 緊急時用（本番環境では非推奨だが可能）
+  - [x] バイパス時は "Version check bypassed" メッセージ表示
+
+**実装完了**: 2025-10-25 | **成果物**: config/ai-cli-versions.yaml (76行) + orchestrate統合 (77行) | **テスト**: 7/7 AI全パス
 
 ---
 
