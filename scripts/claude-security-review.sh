@@ -358,7 +358,7 @@ For each vulnerability found, provide:
     chmod 600 "$prompt_file"  # Ensure only owner can read/write
     echo "$security_prompt" > "$prompt_file"
 
-    if timeout "$SECURITY_REVIEW_TIMEOUT" bash -c "$PROJECT_ROOT/bin/claude-wrapper.sh --stdin < '$prompt_file'" > "$output_file" 2>&1; then
+    if timeout "$SECURITY_REVIEW_TIMEOUT" bash -c 'claude /security-review' > "$output_file" 2>&1; then
         status=0
         local end_time=$(get_timestamp_ms)
         local execution_time=$((end_time - start_time))

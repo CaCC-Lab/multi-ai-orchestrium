@@ -292,7 +292,7 @@ Provide specific, actionable feedback with line numbers where applicable."
     chmod 600 "$prompt_file"  # Ensure only owner can read/write
     echo "$review_prompt" > "$prompt_file"
 
-    if timeout "$CLAUDE_REVIEW_TIMEOUT" bash -c "$PROJECT_ROOT/bin/claude-wrapper.sh --stdin < '$prompt_file'" > "$output_file" 2>&1; then
+    if timeout "$CLAUDE_REVIEW_TIMEOUT" bash -c 'claude /review' > "$output_file" 2>&1; then
         status=0
         local end_time=$(get_timestamp_ms)
         local execution_time=$((end_time - start_time))
