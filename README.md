@@ -207,6 +207,58 @@ tdd-multi-ai-review "レビュー"
 - ブロッキング: `blocking: true|false`
 - 入力参照: `input_from: ["qwen", "droid"]`
 
+## 🔍 Claude Code Review CLIスクリプト
+
+プロジェクトには、Claude MCPを活用した2つの独立したレビュースクリプトが含まれています：
+
+### claude-review.sh - 包括的コードレビュー
+
+```bash
+# 最新コミットをレビュー
+bash scripts/claude-review.sh
+
+# 特定コミットをレビュー
+bash scripts/claude-review.sh --commit abc123
+
+# カスタムタイムアウト（デフォルト: 600秒）
+bash scripts/claude-review.sh --timeout 900
+
+# カスタム出力ディレクトリ
+bash scripts/claude-review.sh --output /tmp/reviews
+```
+
+**出力:**
+- `logs/claude-reviews/{timestamp}_{commit}_claude.json` - JSON形式レポート
+- `logs/claude-reviews/{timestamp}_{commit}_claude.md` - Markdown形式レポート
+- `logs/ai-coop/{YYYYMMDD}/claude_review_{HH}.jsonl` - VibeLoggerログ
+
+### claude-security-review.sh - セキュリティ特化レビュー
+
+```bash
+# セキュリティレビュー実行
+bash scripts/claude-security-review.sh
+
+# 重要度フィルタリング（Critical/High/Medium/Low）
+bash scripts/claude-security-review.sh --severity Critical
+
+# カスタムタイムアウト（デフォルト: 900秒）
+bash scripts/claude-security-review.sh --timeout 1200
+```
+
+**チェック項目:**
+- SQLインジェクション（CWE-89）
+- XSS（CWE-79）
+- コマンドインジェクション（CWE-77, CWE-78）
+- パストラバーサル（CWE-22）
+- ハードコードされた秘密情報（CWE-798）
+- 不安全な暗号化（CWE-327）
+- その他OWASP Top 10対応
+
+**出力:**
+- JSON形式レポート（CVSS v3.1スコア付き）
+- Markdown形式レポート
+- SARIF形式レポート（IDE統合用）
+
 ## 既知の課題
 
 - タイムアウト: 長時間タスクや外部依存での処理待ちが発生しやすい。
