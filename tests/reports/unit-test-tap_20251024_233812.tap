@@ -1,0 +1,63 @@
+1..53
+ok 1 sanitize_wrapper_input: rejects empty input
+ok 2 sanitize_wrapper_input: accepts small safe input (<1KB)
+ok 3 sanitize_wrapper_input: blocks dangerous characters in small input (<1KB)
+ok 4 sanitize_wrapper_input: accepts medium safe input (1KB-100KB)
+ok 5 sanitize_wrapper_input: blocks command injection in medium input (1KB-100KB)
+ok 6 sanitize_wrapper_input: accepts large input (>100KB)
+not ok 7 handle_wrapper_timeout: returns success for quick process
+# (from function `assert_success' in file /home/ryu/.nvm/versions/node/v22.18.0/lib/node_modules/bats-assert/src/assert_success.bash, line 45,
+#  in test file tests/unit/test-common-wrapper-lib.bats, line 88)
+#   `assert_success' failed
+#
+# -- command failed --
+# status : 255
+# output :
+# --
+#
+ok 8 handle_wrapper_timeout: times out slow process
+ok 9 handle_wrapper_timeout: sends SIGTERM then SIGKILL
+ok 10 format_wrapper_output: formats text output
+ok 11 format_wrapper_output: formats JSON output
+ok 12 format_wrapper_output: outputs to stderr for text format
+ok 13 wrapper_structured_error: outputs what/why/how pattern
+ok 14 wrapper_structured_error: returns correct exit code
+ok 15 wrapper_structured_error: uses WRAPPER_EXIT constants
+ok 16 wrapper_print_stack_trace: outputs stack frames
+ok 17 wrapper_print_stack_trace: limits to 20 frames
+ok 18 error codes: WRAPPER_EXIT constants are defined
+ok 19 integration: sanitize + format output pipeline
+ok 20 integration: error handling with stack trace
+ok 21 log_info: outputs info message with icon
+ok 22 log_success: outputs success message with icon
+ok 23 log_warning: outputs warning message with icon
+ok 24 log_error: outputs error message with icon
+ok 25 log_phase: outputs phase separator with icon
+ok 26 get_timestamp_ms: returns numeric timestamp
+ok 27 get_timestamp_ms: returns millisecond precision (13 digits)
+ok 28 get_timestamp_ms: increases over time
+ok 29 sanitize_input: accepts clean input
+ok 30 sanitize_input: rejects semicolon
+ok 31 sanitize_input: rejects pipe
+ok 32 sanitize_input: rejects dollar sign
+ok 33 sanitize_input: rejects redirect operators
+ok 34 sanitize_input: rejects ampersand
+ok 35 sanitize_input: rejects exclamation mark
+ok 36 sanitize_input: accepts large input (>2KB) with relaxed validation
+ok 37 sanitize_input: large input (>2KB) allows spaces and newlines
+ok 38 sanitize_input: rejects empty input
+ok 39 sanitize_input: rejects only whitespace
+ok 40 vibe_log: creates log file
+ok 41 vibe_log: writes JSON format
+ok 42 vibe_pipeline_start: logs pipeline start
+ok 43 vibe_pipeline_done: logs pipeline completion
+ok 44 vibe_phase_start: logs phase start
+ok 45 vibe_phase_done: logs phase completion
+ok 46 vibe_summary_done: logs summary generation
+ok 47 integration: log functions with sanitize_input
+ok 48 integration: timestamp generation and logging
+ok 49 integration: VibeLogger pipeline workflow
+ok 50 sanitize_input: handles special characters in large input
+ok 51 get_timestamp_ms: works across multiple calls
+ok 52 vibe_log: handles special characters in metadata
+ok 53 log functions: handle empty messages

@@ -1,0 +1,9 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "E-Commerce Shopping Cart API",
+    "description": "API for e-commerce shopping cart system",
+    "version": "1.0.0"
+  },
+  "paths": {}
+}

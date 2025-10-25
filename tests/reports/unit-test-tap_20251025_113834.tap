@@ -1,0 +1,116 @@
+1..106
+ok 1 check_ai_available: requires AI name parameter
+ok 2 check_ai_available: returns true for command in PATH # skip Requires actual AI CLI in PATH - tested in integration tests
+ok 3 check_ai_available: returns false for non-existent command
+ok 4 check_ai_with_details: provides detailed availability info # skip Requires actual AI CLI in PATH - tested in integration tests
+ok 5 call_ai: requires AI name parameter
+ok 6 call_ai: requires prompt parameter
+ok 7 call_ai: delegates to call_ai_with_context # skip Requires AI CLI availability - tested in Phase 1 integration tests
+ok 8 call_ai_with_fallback: requires primary AI parameter
+ok 9 call_ai_with_fallback: requires fallback AI parameter
+ok 10 call_ai_with_fallback: requires prompt parameter
+ok 11 call_ai_with_fallback: tries primary then fallback # skip Requires AI CLI availability - tested in integration tests
+ok 12 supports_file_input: returns 1 for stdin redirect (current behavior)
+ok 13 create_secure_prompt_file: requires AI name # skip Covered by Phase 1 tests (12 test cases) - see phase1-file-based-prompt-test.sh
+ok 14 create_secure_prompt_file: requires prompt content # skip Covered by Phase 1 tests (12 test cases) - see phase1-file-based-prompt-test.sh
+ok 15 create_secure_prompt_file: creates file with 600 permissions # skip Covered by Phase 1 tests (12 test cases) - see phase1-file-based-prompt-test.sh
+ok 16 cleanup_prompt_file: safely removes file # skip Covered by Phase 1 tests (6 test cases) - see phase1-file-based-prompt-test.sh
+ok 17 cleanup_prompt_file: handles already-deleted files # skip Covered by Phase 1 tests (6 test cases) - see phase1-file-based-prompt-test.sh
+ok 18 call_ai_with_context: routes small prompts to command-line # skip Covered by Phase 1 tests (10 test cases) - see phase1-file-based-prompt-test.sh
+ok 19 call_ai_with_context: routes large prompts to file-based # skip Covered by Phase 1 tests (10 test cases) - see phase1-file-based-prompt-test.sh
+ok 20 integration: check availability and call AI # skip Requires AI CLI availability - tested in E2E tests
+ok 21 integration: fallback mechanism on primary failure # skip Requires AI CLI availability - tested in E2E tests
+ok 22 integration: file-based routing for large prompts # skip Covered by Phase 1 tests (66 total) - see phase1-file-based-prompt-test.sh
+ok 23 sanitize_wrapper_input: rejects empty input
+ok 24 sanitize_wrapper_input: accepts small safe input (<1KB)
+ok 25 sanitize_wrapper_input: blocks dangerous characters in small input (<1KB)
+ok 26 sanitize_wrapper_input: accepts medium safe input (1KB-100KB)
+ok 27 sanitize_wrapper_input: blocks command injection in medium input (1KB-100KB)
+ok 28 sanitize_wrapper_input: accepts large input (>100KB)
+not ok 29 handle_wrapper_timeout: returns success for quick process
+# (from function `assert_success' in file /home/ryu/.nvm/versions/node/v22.18.0/lib/node_modules/bats-assert/src/assert_success.bash, line 45,
+#  in test file tests/unit/test-common-wrapper-lib.bats, line 88)
+#   `assert_success' failed
+#
+# -- command failed --
+# status : 255
+# output :
+# --
+#
+ok 30 handle_wrapper_timeout: times out slow process
+ok 31 handle_wrapper_timeout: sends SIGTERM then SIGKILL
+ok 32 format_wrapper_output: formats text output
+ok 33 format_wrapper_output: formats JSON output
+ok 34 format_wrapper_output: outputs to stderr for text format
+ok 35 wrapper_structured_error: outputs what/why/how pattern
+ok 36 wrapper_structured_error: returns correct exit code
+ok 37 wrapper_structured_error: uses WRAPPER_EXIT constants
+ok 38 wrapper_print_stack_trace: outputs stack frames
+ok 39 wrapper_print_stack_trace: limits to 20 frames
+ok 40 error codes: WRAPPER_EXIT constants are defined
+ok 41 integration: sanitize + format output pipeline
+ok 42 integration: error handling with stack trace
+ok 43 load_multi_ai_profile: loads valid profile successfully # skip Requires yq parsing and file I/O - tested in integration tests
+ok 44 load_multi_ai_profile: fails with non-existent profile
+ok 45 load_multi_ai_profile: requires yq command # skip yq is in /usr/bin or /bin, cannot test missing yq
+ok 46 load_multi_ai_profile: fails with missing config file
+ok 47 get_workflow_config: returns workflow name for valid workflow # skip Requires yq parsing and file I/O - tested in integration tests
+ok 48 get_workflow_config: fails with non-existent workflow # skip Requires yq parsing and file I/O - tested in integration tests
+ok 49 get_workflow_config: fails with empty profile # skip Requires yq parsing and file I/O - tested in integration tests
+ok 50 get_phases: returns phase count # skip Requires yq parsing - tested in integration
+ok 51 get_phase_info: returns phase name and parallel flag # skip Requires yq parsing - tested in integration
+ok 52 get_phase_ai: returns AI name for sequential phase # skip Requires yq parsing - tested in integration
+ok 53 get_phase_role: returns role for sequential phase # skip Requires yq parsing - tested in integration
+ok 54 get_phase_timeout: returns timeout for sequential phase # skip Requires yq parsing - tested in integration
+ok 55 get_parallel_count: returns parallel task count # skip Requires yq parsing - tested in integration
+ok 56 get_parallel_ai: returns AI name for parallel task # skip Requires yq parsing - tested in integration
+ok 57 get_parallel_role: returns role for parallel task # skip Requires yq parsing - tested in integration
+ok 58 get_parallel_timeout: returns timeout for parallel task # skip Requires yq parsing - tested in integration
+ok 59 get_parallel_name: returns name for parallel task # skip Requires yq parsing - tested in integration
+ok 60 get_parallel_blocking: returns blocking flag for parallel task # skip Requires yq parsing - tested in integration
+ok 61 execute_yaml_workflow: requires valid profile # skip Requires full orchestration setup - tested in E2E
+ok 62 execute_yaml_workflow: requires valid workflow # skip Requires full orchestration setup - tested in E2E
+ok 63 execute_yaml_workflow: handles empty workflow gracefully # skip Requires full orchestration setup - tested in E2E
+ok 64 error handling: gracefully handles malformed YAML
+ok 65 error handling: handles missing required fields # skip Requires yq parsing and file I/O - tested in integration tests
+ok 66 integration: profile loading with valid config # skip Requires yq parsing and file I/O - tested in integration tests
+ok 67 integration: multiple profile validation # skip Requires yq parsing and file I/O - tested in integration tests
+ok 68 integration: empty workflow handling # skip Requires yq parsing and file I/O - tested in integration tests
+ok 69 yaml parsing: handles special characters in profile names # skip Requires yq parsing and file I/O - tested in integration tests
+ok 70 yaml parsing: handles unicode characters in phase names # skip Requires yq parsing and file I/O - tested in integration tests
+ok 71 edge case: very long profile name
+ok 72 edge case: profile name with spaces
+ok 73 edge case: empty profile name # skip Requires yq parsing and file I/O - tested in integration tests
+ok 74 log_info: outputs info message with icon
+ok 75 log_success: outputs success message with icon
+ok 76 log_warning: outputs warning message with icon
+ok 77 log_error: outputs error message with icon
+ok 78 log_phase: outputs phase separator with icon
+ok 79 get_timestamp_ms: returns numeric timestamp
+ok 80 get_timestamp_ms: returns millisecond precision (13 digits)
+ok 81 get_timestamp_ms: increases over time
+ok 82 sanitize_input: accepts clean input
+ok 83 sanitize_input: rejects semicolon
+ok 84 sanitize_input: rejects pipe
+ok 85 sanitize_input: rejects dollar sign
+ok 86 sanitize_input: rejects redirect operators
+ok 87 sanitize_input: rejects ampersand
+ok 88 sanitize_input: rejects exclamation mark
+ok 89 sanitize_input: accepts large input (>2KB) with relaxed validation
+ok 90 sanitize_input: large input (>2KB) allows spaces and newlines
+ok 91 sanitize_input: rejects empty input
+ok 92 sanitize_input: rejects only whitespace
+ok 93 vibe_log: creates log file
+ok 94 vibe_log: writes JSON format
+ok 95 vibe_pipeline_start: logs pipeline start
+ok 96 vibe_pipeline_done: logs pipeline completion
+ok 97 vibe_phase_start: logs phase start
+ok 98 vibe_phase_done: logs phase completion
+ok 99 vibe_summary_done: logs summary generation
+ok 100 integration: log functions with sanitize_input
+ok 101 integration: timestamp generation and logging
+ok 102 integration: VibeLogger pipeline workflow
+ok 103 sanitize_input: handles special characters in large input
+ok 104 get_timestamp_ms: works across multiple calls
+ok 105 vibe_log: handles special characters in metadata
+ok 106 log functions: handle empty messages

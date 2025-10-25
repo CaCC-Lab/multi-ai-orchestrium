@@ -1,0 +1,68 @@
+/* Main styles for the e-commerce app */
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f8f9fa;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* Custom styles */
+main {
+  min-height: 80vh;
+}
+
+/* Product card styles */
+.product-card {
+  transition: transform 0.2s;
+}
+
+.product-card:hover {
+  transform: translateY(-5px);
+}
+
+/* Cart styles */
+.cart-item-img {
+  width: 50px;
+  height: 50px;
+  object-fit: cover;
+}
+
+/* Checkout page */
+.checkout-step {
+  background-color: #e9ecef;
+  padding: 10px 15px;
+  border-radius: 5px;
+  margin-bottom: 20px;
+}
+
+.checkout-step.active {
+  background-color: #007bff;
+  color: white;
+}
+
+/* Admin dashboard */
+.admin-stat-card {
+  text-align: center;
+  padding: 20px;
+}
+
+.admin-stat-card .stat-number {
+  font-size: 2.5rem;
+  font-weight: bold;
+  color: #007bff;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .product-card {
+    margin-bottom: 20px;
+  }
+}

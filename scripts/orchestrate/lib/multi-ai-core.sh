@@ -227,9 +227,25 @@ EOF
 
 # Sanitize user input (Security - Command Injection Prevention)
 # Phase 4.5 Update: Support large prompts via file-based system
+#
+# P0.2.1 DEPRECATION NOTICE:
+# This function is maintained for backward compatibility but is DEPRECATED.
+# For new code, use sanitize_input_strict() for maximum security.
+#
+# Migration Path:
+#   - User-facing input (CLI prompts): Use sanitize_input_strict()
+#   - Large workflow prompts (>2KB): Continue using sanitize_input() or sanitize_input_for_file()
+#   - See: docs/SANITIZATION_MIGRATION.md for detailed migration guide
+#
 sanitize_input() {
     local input="$1"
     local max_len=102400  # Increased to 100KB for workflow prompts (Phase 4.5)
+
+    # P0.2.1: Deprecation warning (logged once per session to avoid spam)
+    if [[ -z "${SANITIZE_INPUT_DEPRECATION_WARNED:-}" ]]; then
+        log_warning "sanitize_input() is deprecated. Use sanitize_input_strict() for new code (see docs/SANITIZATION_MIGRATION.md)"
+        export SANITIZE_INPUT_DEPRECATION_WARNED=1
+    fi
 
     # Length check - use sanitize_input_for_file() for very large prompts
     if [ ${#input} -gt $max_len ]; then
@@ -311,6 +327,113 @@ sanitize_input_for_file() {
     # Allow all special characters including backticks - safe in file context
     # Markdown code blocks, shell snippets, JSON, etc. are all permitted
     echo "$input"
+}
+
+# P0.2.1: Strict input sanitization with whitelist approach (Defense in Depth)
+# Implements Gemini CIO security recommendation from 7AI Comprehensive Review
+#
+# Security Strategy:
+#   Layer 1: Whitelist - Only allow safe characters (alphanumeric + punctuation + Japanese)
+#   Layer 2: Blocklist - Explicitly reject dangerous command injection patterns
+#   Layer 3: Validation - Length and emptiness checks
+#
+# Use Cases:
+#   - User-provided prompts from CLI
+#   - External input requiring maximum security
+#   - Security-critical operations
+#
+# For large workflow prompts, use sanitize_input() or sanitize_input_for_file()
+sanitize_input_strict() {
+    local input="$1"
+    local max_len="${2:-102400}"  # Default: 100KB
+
+    # Layer 3: Empty check
+    if [[ -z "$input" ]] || [[ "$input" =~ ^[[:space:]]*$ ]]; then
+        log_structured_error \
+            "Input is empty or whitespace-only" \
+            "Strict sanitization requires non-empty input" \
+            "Provide valid text input"
+        return 1
+    fi
+
+    # Layer 3: Length check
+    if [[ ${#input} -gt $max_len ]]; then
+        log_structured_error \
+            "Input too long (${#input} > $max_len bytes)" \
+            "Strict sanitization enforces size limits for security" \
+            "Use sanitize_input_for_file() for large prompts (>100KB)"
+        return 1
+    fi
+
+    # Layer 2: Command injection patterns (blocklist as secondary defense)
+    # Check for shell metacharacters and dangerous commands BEFORE whitelist
+    # This provides early detection of obvious attacks
+    local dangerous_patterns=(
+        '\$\('      # Command substitution $(...)
+        '`'         # Command substitution `...`
+        '\$\{'      # Variable expansion ${...}
+        '&&'        # Command chaining
+        '\|\|'      # Command chaining
+        '\|'        # Pipe operator
+        '>'         # Output redirection
+        '<'         # Input redirection
+        'eval[[:space:]]'   # eval command
+        'exec[[:space:]]'   # exec command
+        'source[[:space:]]' # source command
+        '\.[[:space:]]'     # source command (dot)
+        'rm[[:space:]]+-rf' # Dangerous rm
+        '/dev/'     # Device file access
+        '/proc/'    # Process info access
+    )
+
+    for pattern in "${dangerous_patterns[@]}"; do
+        if [[ "$input" =~ $pattern ]]; then
+            log_structured_error \
+                "Input contains dangerous pattern: $pattern" \
+                "Command injection attempt detected" \
+                "Remove shell metacharacters and try again"
+            return 1
+        fi
+    done
+
+    # Layer 1: Whitelist validation
+    # Allow: Alphanumeric (a-zA-Z0-9), spaces, common punctuation, newlines, tabs
+    # Punctuation allowed: . , ; : ! ? ' " ( ) [ ] { } / @ # % * + = _ - \n \t
+    # Japanese/UTF-8: Allow high-bit characters (0x80-0xFF) for multi-byte UTF-8
+    #
+    # Note: Bash regex doesn't support \p{Hiragana}, so we allow high-bit bytes
+    # which covers Japanese and most international characters
+    #
+    # Pattern breakdown:
+    #   [[:alnum:]]  - ASCII letters and digits
+    #   [[:space:]]  - Whitespace (space, tab, newline, etc.)
+    #   [.,;:!?'\"()\[\]\{\}/@#%*+=_-] - Safe punctuation (braces escaped)
+    #   [\x80-\xFF]  - High-bit characters (Japanese, Unicode)
+    #
+    if ! echo "$input" | LC_ALL=C grep -qE '^[[:alnum:][:space:].,;:!?'"'"'\"()\[\]\{\}/@#%*+=_-]+$'; then
+        # Check if input contains high-bit characters (UTF-8)
+        if echo "$input" | LC_ALL=C grep -q '[^[:print:][:space:]]'; then
+            # Contains non-ASCII, likely Japanese - allow it
+            # Secondary check: ensure no shell metacharacters
+            if echo "$input" | grep -qE '[$`\\&|<>]'; then
+                log_structured_error \
+                    "Input contains shell metacharacters mixed with UTF-8" \
+                    "Whitelist validation failed - dangerous characters detected" \
+                    "Remove special characters: \$ \` \\ ; & | < >"
+                return 1
+            fi
+        else
+            log_structured_error \
+                "Input contains invalid ASCII characters" \
+                "Whitelist validation failed - only alphanumeric and safe punctuation allowed" \
+                "Allowed: a-zA-Z0-9 space .,;:!?'\"()[]{}/@#%*+=_-"
+            return 1
+        fi
+    fi
+
+    # All checks passed - return sanitized input
+    echo "$input"
+    return 0
 }
 
 # Run command with timeout (Timeout handling)
