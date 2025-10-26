@@ -219,6 +219,9 @@ tests/
 !docs/USER_GUIDE_CLAUDE_REVIEW.md
 !docs/DEVELOPER_GUIDE_CLAUDE_REVIEW.md
 !docs/CLAUDE_REVIEW_SLASH_COMMANDS_IMPLEMENTATION_PLAN.md
+!docs/FIVE_AI_REVIEW_SCRIPTS_IMPLEMENTATION_PLAN.md
+!docs/test-observations/
+!docs/test-observations/*
 
 
 # ========== Keep These Files ==========
