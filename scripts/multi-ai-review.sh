@@ -37,6 +37,7 @@ Unified interface for multi-AI code reviews.
 
 REQUIRED ARGUMENTS (choose one):
   --type TYPE           Review type: security | quality | enterprise | all
+  --ai AI_NAME          Specific AI reviewer: gemini | qwen | cursor | amp | droid | all
   --profile PROFILE     Use predefined profile from config/review-profiles.yaml
                         Available: security-focused | quality-focused |
                                   enterprise-focused | balanced | fast
@@ -57,6 +58,12 @@ EXAMPLES:
 
   # Run all review types in parallel
   $(basename "$0") --type all --commit abc123
+
+  # Run specific AI reviewer
+  $(basename "$0") --ai gemini --commit abc123
+
+  # Run all 5 AI reviewers in parallel
+  $(basename "$0") --ai all
 
   # Use predefined profile
   $(basename "$0") --profile balanced
@@ -152,6 +159,7 @@ apply_profile_settings() {
 
 # Default values
 TYPE=""
+AI_NAME=""
 COMMIT="HEAD"
 TIMEOUT=""
 OUTPUT_DIR="${PROJECT_ROOT}/logs/multi-ai-reviews"
@@ -165,6 +173,10 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --type)
             TYPE="$2"
+            shift 2
+            ;;
+        --ai)
+            AI_NAME="$2"
             shift 2
             ;;
         --commit)
@@ -216,28 +228,44 @@ if [[ -n "$PROFILE" ]]; then
     fi
 fi
 
-# Validate required arguments (--type or --profile required)
-if [[ -z "$TYPE" && -z "$PROFILE" ]]; then
-    echo "Error: Either --type or --profile is required" >&2
+# Validate required arguments (--type, --ai, or --profile required)
+if [[ -z "$TYPE" && -z "$AI_NAME" && -z "$PROFILE" ]]; then
+    echo "Error: One of --type, --ai, or --profile is required" >&2
     usage 2
 fi
 
-# If profile is used but TYPE is still empty, it means the profile didn't set it
-if [[ -n "$PROFILE" && -z "$TYPE" ]]; then
+# If --ai is specified, it takes precedence over --type
+if [[ -n "$AI_NAME" ]]; then
+    # Validate AI name
+    case "$AI_NAME" in
+        gemini|qwen|cursor|amp|droid|all)
+            # Valid AI names
+            ;;
+        *)
+            echo "Error: Invalid AI name '$AI_NAME'. Use: gemini|qwen|cursor|amp|droid|all" >&2
+            usage 2
+            ;;
+    esac
+fi
+
+# If profile is used but TYPE and AI_NAME are still empty, it means the profile didn't set it
+if [[ -n "$PROFILE" && -z "$TYPE" && -z "$AI_NAME" ]]; then
     echo "Error: Profile '$PROFILE' did not specify a valid review type" >&2
     exit 2
 fi
 
-# Validate type
-case "$TYPE" in
-    security|quality|enterprise|all)
-        # Valid types
-        ;;
-    *)
-        echo "Error: Invalid type '$TYPE'. Use: security|quality|enterprise|all" >&2
-        usage 2
-        ;;
-esac
+# Validate type (only if --ai is not specified)
+if [[ -n "$TYPE" && -z "$AI_NAME" ]]; then
+    case "$TYPE" in
+        security|quality|enterprise|all)
+            # Valid types
+            ;;
+        *)
+            echo "Error: Invalid type '$TYPE'. Use: security|quality|enterprise|all" >&2
+            usage 2
+            ;;
+    esac
+fi
 
 # Validate type-specific options
 if [[ "$FAST_MODE" == "true" && "$TYPE" != "quality" && "$TYPE" != "all" ]]; then
@@ -286,6 +314,27 @@ execute_review() {
 
     if [[ ! -f "$script_path" ]]; then
         echo "Error: Review script not found: $script_path" >&2
+        return 1
+    fi
+
+    if [[ ! -x "$script_path" ]]; then
+        chmod +x "$script_path"
+    fi
+
+    # Execute as subprocess (safer than sourcing)
+    bash "$script_path" "${args[@]}"
+}
+
+# Execute AI-specific review
+execute_ai_review() {
+    local ai_name="$1"
+    shift
+    local args=("$@")
+
+    local script_path="${SCRIPT_DIR}/${ai_name}-review.sh"
+
+    if [[ ! -f "$script_path" ]]; then
+        echo "Error: AI review script not found: $script_path" >&2
         return 1
     fi
 
@@ -515,6 +564,129 @@ HTML_FOOTER
 
 # Get common arguments
 COMMON_ARGS=($(build_common_args))
+
+# ============================================================================
+# Priority: Handle --ai option if specified
+# ============================================================================
+
+if [[ -n "$AI_NAME" ]]; then
+    case "$AI_NAME" in
+        all)
+            echo "Running all 5 AI reviewers in parallel..." >&2
+
+            # Array to track background job PIDs
+            declare -a AI_PIDS
+            declare -a AI_RESULTS
+            declare -a AI_NAMES=("gemini" "qwen" "cursor" "amp" "droid")
+
+            # Launch all AI reviews in parallel
+            for i in "${!AI_NAMES[@]}"; do
+                execute_ai_review "${AI_NAMES[$i]}" "${COMMON_ARGS[@]}" &
+                AI_PIDS[$i]=$!
+            done
+
+            # Wait for all jobs and collect exit codes
+            for i in "${!AI_NAMES[@]}"; do
+                AI_RESULTS[$i]=0
+                wait ${AI_PIDS[$i]} || AI_RESULTS[$i]=$?
+            done
+
+            # Report results
+            echo "" >&2
+            echo "=== 5AI Review Results ===" >&2
+            for i in "${!AI_NAMES[@]}"; do
+                local ai_name="${AI_NAMES[$i]}"
+                local status=$([ ${AI_RESULTS[$i]} -eq 0 ] && echo "✓ PASSED" || echo "✗ FAILED (exit ${AI_RESULTS[$i]})")
+                printf "%-15s %s\n" "${ai_name^} Review:" "$status" >&2
+            done
+            echo "" >&2
+
+            # Generate unified 5AI report
+            echo "=== Generating Unified 5AI Reports ===" >&2
+            local unified_json="${OUTPUT_DIR}/unified-5ai-review.json"
+            local unified_html="${OUTPUT_DIR}/unified-5ai-review.html"
+
+            # Merge JSON reports from all 5 AIs
+            local all_reports=()
+            for ai_name in "${AI_NAMES[@]}"; do
+                local json_file="${OUTPUT_DIR}/${ai_name}-review.json"
+                [[ -f "$json_file" ]] && all_reports+=("$json_file")
+            done
+
+            if [[ ${#all_reports[@]} -gt 0 ]]; then
+                # Merge 5AI findings
+                jq -s '
+                {
+                    findings: (
+                        map(.findings // []) |
+                        add |
+                        unique_by(.title + (.code_location.file_path // "") + (.code_location.line_range.start // 0 | tostring)) |
+                        sort_by(.priority // 999)
+                    ),
+                    overall_correctness: (
+                        if (map(.overall_correctness) | any(. == "patch is incorrect")) then
+                            "patch is incorrect"
+                        elif (map(.overall_correctness) | any(. == "needs review")) then
+                            "needs review"
+                        else
+                            "patch is correct"
+                        end
+                    ),
+                    overall_explanation: (
+                        "Combined review results from 5 AI reviewers: " +
+                        (map(.metadata.ai_reviewer // "unknown") | join(", "))
+                    ),
+                    overall_confidence_score: (
+                        map(.overall_confidence_score // 0) | add / length
+                    ),
+                    metadata: {
+                        unified_review: true,
+                        review_mode: "5AI",
+                        ai_reviewers: (map(.metadata.ai_reviewer // "unknown")),
+                        total_findings: (map(.findings // []) | map(length) | add),
+                        review_timestamp: (now | strftime("%Y-%m-%dT%H:%M:%SZ"))
+                    }
+                }
+                ' "${all_reports[@]}" > "$unified_json"
+
+                echo "✓ Unified 5AI JSON report generated: $unified_json" >&2
+                echo "JSON: $unified_json" >&2
+                echo "" >&2
+            fi
+
+            # Exit with failure if any review failed
+            local any_failed=false
+            for i in "${!AI_RESULTS[@]}"; do
+                if [[ ${AI_RESULTS[$i]} -ne 0 ]]; then
+                    any_failed=true
+                    break
+                fi
+            done
+
+            if [[ "$any_failed" == "true" ]]; then
+                exit 1
+            fi
+
+            exit 0
+            ;;
+
+        gemini|qwen|cursor|amp|droid)
+            # Execute specific AI review
+            echo "Running ${AI_NAME^} review..." >&2
+            execute_ai_review "$AI_NAME" "${COMMON_ARGS[@]}"
+            exit $?
+            ;;
+
+        *)
+            echo "Error: Invalid AI name '$AI_NAME'" >&2
+            exit 2
+            ;;
+    esac
+fi
+
+# ============================================================================
+# Handle --type option (original logic)
+# ============================================================================
 
 # P0.2.2.1: Handle --type all (parallel execution)
 case "$TYPE" in

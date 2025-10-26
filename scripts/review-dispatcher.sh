@@ -122,8 +122,38 @@ analyze_security_keywords() {
 }
 
 # ============================================================================
-# P3A.2.1.2: ルールベース自動タイプ選択
+# P3A.2.1.2: ルールベース自動タイプ選択（拡張: 5AI対応）
 # ============================================================================
+
+analyze_ui_ux_files() {
+    local diff="$1"
+
+    # UI/UX関連ファイルを判定
+    local has_ui_files=false
+
+    # UI/UXファイルパターン
+    if echo "$diff" | grep -qE "diff --git.*/(.tsx|.jsx|.vue|components|styles|ui|frontend)"; then
+        has_ui_files=true
+    fi
+
+    # 結果を返す（グローバル変数に格納）
+    HAS_UI_FILES=$has_ui_files
+}
+
+analyze_production_files() {
+    local diff="$1"
+
+    # プロダクション/エンタープライズ関連ファイルを判定
+    local has_prod_files=false
+
+    # プロダクションファイルパターン
+    if echo "$diff" | grep -qE "diff --git.*/(.Dockerfile|docker-compose|.ya?ml|Makefile|package.json|build|deploy)"; then
+        has_prod_files=true
+    fi
+
+    # 結果を返す（グローバル変数に格納）
+    HAS_PROD_FILES=$has_prod_files
+}
 
 determine_review_type() {
     local commit="${1:-HEAD}"
@@ -135,6 +165,8 @@ determine_review_type() {
     analyze_file_types "$ANALYZED_DIFF"
     analyze_change_size "$ANALYZED_DIFF"
     analyze_security_keywords "$ANALYZED_DIFF"
+    analyze_ui_ux_files "$ANALYZED_DIFF"
+    analyze_production_files "$ANALYZED_DIFF"
 
     # 分析結果を表示
     echo -e "${BLUE}ℹ${NC} Analysis Results:"
@@ -145,6 +177,8 @@ determine_review_type() {
     echo "  - Config Files: $HAS_CONFIG_FILES"
     echo "  - Test Files: $HAS_TEST_FILES"
     echo "  - Docs Files: $HAS_DOCS_FILES"
+    echo "  - UI/UX Files: $HAS_UI_FILES"
+    echo "  - Production Files: $HAS_PROD_FILES"
     echo ""
 
     # ルールベース判定
@@ -202,6 +236,73 @@ determine_review_type() {
 }
 
 # ============================================================================
+# P4.1.2: 5AI自動選択ロジック（新規）
+# ============================================================================
+
+determine_ai_reviewer() {
+    local commit="${1:-HEAD}"
+
+    echo -e "${BLUE}ℹ${NC} Analyzing commit for AI reviewer selection: $commit"
+
+    # コンテキスト分析を実行
+    analyze_git_diff "$commit" > /dev/null
+    analyze_file_types "$ANALYZED_DIFF"
+    analyze_change_size "$ANALYZED_DIFF"
+    analyze_security_keywords "$ANALYZED_DIFF"
+    analyze_ui_ux_files "$ANALYZED_DIFF"
+    analyze_production_files "$ANALYZED_DIFF"
+
+    # 分析結果を表示
+    echo -e "${BLUE}ℹ${NC} Analysis Results:"
+    echo "  - Changed Files: $CHANGED_FILES"
+    echo "  - Changed Lines: $CHANGED_LINES"
+    echo "  - Security Score: $SECURITY_SCORE"
+    echo "  - Security Files: $HAS_SECURITY_FILES"
+    echo "  - UI/UX Files: $HAS_UI_FILES"
+    echo "  - Docs Files: $HAS_DOCS_FILES"
+    echo "  - Production Files: $HAS_PROD_FILES"
+    echo ""
+
+    # 5AIルールベース判定（優先度順）
+    local ai_name=""
+    local reason=""
+
+    # Priority 1: Security (Gemini)
+    if [[ $SECURITY_SCORE -ge 5 ]] || [[ "$HAS_SECURITY_FILES" == "true" ]]; then
+        ai_name="gemini"
+        reason="Security-related changes detected (Security Score: $SECURITY_SCORE)"
+
+    # Priority 2: Documentation (Amp)
+    elif [[ "$HAS_DOCS_FILES" == "true" ]]; then
+        ai_name="amp"
+        reason="Documentation changes detected"
+
+    # Priority 3: UI/UX (Cursor)
+    elif [[ "$HAS_UI_FILES" == "true" ]]; then
+        ai_name="cursor"
+        reason="UI/UX changes detected"
+
+    # Priority 4: Production/Enterprise (Droid)
+    elif [[ "$HAS_PROD_FILES" == "true" ]] || [[ $CHANGED_LINES -gt 500 ]] || [[ $CHANGED_FILES -gt 10 ]]; then
+        ai_name="droid"
+        reason="Production/enterprise changes detected (Lines: $CHANGED_LINES, Files: $CHANGED_FILES)"
+
+    # Priority 5: Code Implementation (Qwen - default)
+    else
+        ai_name="qwen"
+        reason="Code implementation changes (default)"
+    fi
+
+    # 判定結果を返す（グローバル変数に格納）
+    DETERMINED_AI=$ai_name
+    AI_DETERMINATION_REASON=$reason
+
+    echo -e "${GREEN}✓${NC} Determined AI Reviewer: ${YELLOW}${ai_name^}${NC}"
+    echo -e "${BLUE}ℹ${NC} Reason: $reason"
+    echo ""
+}
+
+# ============================================================================
 # P3A.2.1.3: 複数タイプ並列実行
 # ============================================================================
 
@@ -246,6 +347,24 @@ execute_review() {
     bash "$MULTI_AI_REVIEW" --type "$review_type" --commit "$commit" "${additional_args[@]}"
 }
 
+execute_ai_review() {
+    local commit="$1"
+    local ai_name="$2"
+    shift 2
+    local additional_args=("$@")
+
+    echo -e "${BLUE}ℹ${NC} Executing review with AI: ${YELLOW}${ai_name^}${NC}"
+    echo -e "${BLUE}ℹ${NC} Commit: $commit"
+
+    if [[ ! -f "$MULTI_AI_REVIEW" ]]; then
+        echo -e "${RED}✗${NC} Error: multi-ai-review.sh not found at $MULTI_AI_REVIEW"
+        return 1
+    fi
+
+    # AI レビュー実行
+    bash "$MULTI_AI_REVIEW" --ai "$ai_name" --commit "$commit" "${additional_args[@]}"
+}
+
 # ============================================================================
 # ヘルプメッセージ
 # ============================================================================
@@ -254,32 +373,44 @@ show_help() {
     cat <<EOF
 Usage: review-dispatcher.sh [OPTIONS]
 
-Automatically determines the appropriate review type based on git diff analysis.
+Automatically determines the appropriate review type or AI reviewer based on git diff analysis.
 
 OPTIONS:
   --commit HASH         Commit hash to review (default: HEAD)
-  --dry-run            Show determined review type without executing
-  --force-type TYPE    Override automatic type determination
+  --dry-run            Show determined review type/AI without executing
+  --force-type TYPE    Override automatic type determination (security|quality|enterprise)
+  --force-ai AI        Override automatic AI selection (gemini|qwen|cursor|amp|droid)
+  --mode MODE          Selection mode: type (default) | ai
   --help               Show this help message
 
-AUTOMATIC RULES:
+AUTOMATIC RULES (--mode type):
   - Security Review: Security keywords (≥5) or security-related files
   - Enterprise Review: Large changes (≥500 lines) or many files (≥10)
   - Quality Review: Test files, documentation, or standard changes
   - All Reviews: Critical changes (security + large scale)
 
+AUTOMATIC RULES (--mode ai):
+  - Gemini: Security-related changes (auth, crypto, secrets)
+  - Amp: Documentation changes (README, .md files)
+  - Cursor: UI/UX changes (components, styles, frontend)
+  - Droid: Production/enterprise changes (build, deploy, large-scale)
+  - Qwen: Code implementation (default)
+
 EXAMPLES:
-  # Auto-detect review type for latest commit
+  # Auto-detect review type for latest commit (type mode)
   review-dispatcher.sh
 
+  # Auto-detect AI reviewer (ai mode)
+  review-dispatcher.sh --mode ai
+
   # Dry-run to see what would be selected
-  review-dispatcher.sh --dry-run
+  review-dispatcher.sh --dry-run --mode ai
 
-  # Override automatic detection
-  review-dispatcher.sh --force-type security
+  # Override automatic AI detection
+  review-dispatcher.sh --force-ai gemini
 
-  # Review specific commit
-  review-dispatcher.sh --commit abc123
+  # Review specific commit with AI mode
+  review-dispatcher.sh --commit abc123 --mode ai
 
 EOF
 }
@@ -292,6 +423,8 @@ main() {
     local commit="HEAD"
     local dry_run=false
     local force_type=""
+    local force_ai=""
+    local mode="type"
     local additional_args=()
 
     # 引数解析
@@ -309,6 +442,14 @@ main() {
                 force_type="$2"
                 shift 2
                 ;;
+            --force-ai)
+                force_ai="$2"
+                shift 2
+                ;;
+            --mode)
+                mode="$2"
+                shift 2
+                ;;
             --help)
                 show_help
                 exit 0
@@ -321,38 +462,69 @@ main() {
     done
 
     echo "╔══════════════════════════════════════════════════════════════════════╗"
-    echo "║ Review Dispatcher - Automatic Type Detection                        ║"
-    echo "║ Phase 3A.2.1: Rule-Based Auto-Routing                              ║"
+    echo "║ Review Dispatcher - Automatic Type/AI Detection                     ║"
+    echo "║ Phase 3A.2.1 + Phase 4.1.2: Rule-Based Auto-Routing                ║"
     echo "╚══════════════════════════════════════════════════════════════════════╝"
     echo ""
 
-    # タイプ決定
-    if [[ -n "$force_type" ]]; then
-        DETERMINED_TYPE="$force_type"
-        DETERMINATION_REASON="Forced by --force-type option"
-        echo -e "${YELLOW}⚠${NC} Using forced type: $force_type"
+    # モード選択
+    if [[ "$mode" == "ai" ]]; then
+        # AI モード
+        echo -e "${BLUE}ℹ${NC} Running in AI mode (5AI individual reviewers)"
         echo ""
+
+        # AI決定
+        if [[ -n "$force_ai" ]]; then
+            DETERMINED_AI="$force_ai"
+            AI_DETERMINATION_REASON="Forced by --force-ai option"
+            echo -e "${YELLOW}⚠${NC} Using forced AI: ${force_ai^}"
+            echo ""
+        else
+            determine_ai_reviewer "$commit"
+        fi
+
+        # Dry-runモード
+        if [[ "$dry_run" == "true" ]]; then
+            echo -e "${GREEN}✓${NC} Dry-run mode: Would execute review with AI ${YELLOW}${DETERMINED_AI^}${NC}"
+            echo -e "${BLUE}ℹ${NC} Reason: $AI_DETERMINATION_REASON"
+            exit 0
+        fi
+
+        # AI レビュー実行
+        execute_ai_review "$commit" "$DETERMINED_AI" "${additional_args[@]}"
     else
-        determine_review_type "$commit"
-    fi
-
-    # 複数タイプ実行判定
-    local final_type=$(should_run_multiple_types)
-
-    if [[ "$final_type" != "$DETERMINED_TYPE" ]]; then
-        echo -e "${YELLOW}⚠${NC} Critical changes detected. Running all review types."
+        # Type モード（既存ロジック）
+        echo -e "${BLUE}ℹ${NC} Running in type mode (security/quality/enterprise)"
         echo ""
-    fi
 
-    # Dry-runモード
-    if [[ "$dry_run" == "true" ]]; then
-        echo -e "${GREEN}✓${NC} Dry-run mode: Would execute review with type ${YELLOW}$final_type${NC}"
-        echo -e "${BLUE}ℹ${NC} Reason: $DETERMINATION_REASON"
-        exit 0
-    fi
+        # タイプ決定
+        if [[ -n "$force_type" ]]; then
+            DETERMINED_TYPE="$force_type"
+            DETERMINATION_REASON="Forced by --force-type option"
+            echo -e "${YELLOW}⚠${NC} Using forced type: $force_type"
+            echo ""
+        else
+            determine_review_type "$commit"
+        fi
 
-    # レビュー実行
-    execute_review "$commit" "$final_type" "${additional_args[@]}"
+        # 複数タイプ実行判定
+        local final_type=$(should_run_multiple_types)
+
+        if [[ "$final_type" != "$DETERMINED_TYPE" ]]; then
+            echo -e "${YELLOW}⚠${NC} Critical changes detected. Running all review types."
+            echo ""
+        fi
+
+        # Dry-runモード
+        if [[ "$dry_run" == "true" ]]; then
+            echo -e "${GREEN}✓${NC} Dry-run mode: Would execute review with type ${YELLOW}$final_type${NC}"
+            echo -e "${BLUE}ℹ${NC} Reason: $DETERMINATION_REASON"
+            exit 0
+        fi
+
+        # レビュー実行
+        execute_review "$commit" "$final_type" "${additional_args[@]}"
+    fi
 }
 
 # Run main if executed directly
