@@ -110,63 +110,6 @@ chmod +x setup-permissions.sh
 
 ディレクトリ構造はそのままで、ご自身のプロジェクトに追加するだけでOKです。
 
-## 🔑 環境変数の設定
-
-Multi-AI Orchestriumでは、各AIサービスのAPI Keyを環境変数で管理します。以下の環境変数を設定してください：
-
-```bash
-# Claude API Key (必須: Claude Code実行時)
-export CLAUDE_API_KEY="your-claude-api-key"
-
-# Gemini API Key (必須: Gemini検索・セキュリティレビュー実行時)
-export GEMINI_API_KEY="your-gemini-api-key"
-
-# Qwen API Key (必須: Qwen高速プロトタイピング実行時)
-export QWEN_API_KEY="your-qwen-api-key"
-
-# Droid API Key (必須: Droidエンタープライズレビュー実行時)
-export DROID_API_KEY="your-droid-api-key"
-
-# Codex API Key (必須: Codex最適化レビュー実行時)
-export CODEX_API_KEY="your-codex-api-key"
-
-# Cursor API Key (必須: Cursor統合テスト実行時)
-export CURSOR_API_KEY="your-cursor-api-key"
-
-# Amp API Key (必須: Ampプロジェクトマネージャレビュー実行時)
-export AMP_API_KEY="your-amp-api-key"
-```
-
-### 永続的な設定方法
-
-環境変数を永続化するには、`.bashrc` または `.zshrc` に追加します：
-
-```bash
-# ~/.bashrc または ~/.zshrc に追加
-echo 'export GEMINI_API_KEY="your-gemini-api-key"' >> ~/.bashrc
-echo 'export CLAUDE_API_KEY="your-claude-api-key"' >> ~/.bashrc
-# ... 他のAPI Keyも同様に追加
-
-# 設定を反映
-source ~/.bashrc  # または source ~/.zshrc
-```
-
-### セキュリティ上の注意
-
-- **API Keyをgit管理しない**: `.env` ファイルは `.gitignore` に追加済み
-- **環境変数で管理**: 設定ファイルにAPI Keyを直接記述しない
-- **権限管理**: API Keyファイルは `chmod 600` で保護
-- **定期ローテーション**: 定期的にAPI Keyを更新
-
-### API Keyの確認
-
-設定した環境変数を確認するには：
-
-```bash
-echo $GEMINI_API_KEY  # 設定されていれば値が表示される
-env | grep _API_KEY   # すべてのAPI Key環境変数を表示
-```
-
 ## 📁 プロジェクト構造
 
 ```
