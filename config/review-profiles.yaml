@@ -1,0 +1,284 @@
+# review-profiles.yaml - AI review configuration profiles
+# Version: 1.0.0
+# Purpose: Define AI roles, timeouts, and features for review workflows
+# Reference: OPTION_D++_IMPLEMENTATION_PLAN.md Phase 2.2
+
+# ============================================================================
+# Profile Definitions
+# ============================================================================
+
+profiles:
+  # -------------------------------------------------------------------------
+  # Security-Focused Profile
+  # Primary: Gemini (Web search + CVE checking)
+  # Fallback: Claude Security (OWASP + CWE expertise)
+  # -------------------------------------------------------------------------
+  security-focused:
+    description: "Web search-enhanced security review with CVE checking"
+    primary: gemini
+    fallback: claude-security  # P0.2.3.2: Updated to use claude-security adapter
+    timeout: 600  # 10 minutes (Web search overhead)
+
+    features:
+      - web_search          # Gemini's Web search for latest vulnerabilities
+      - cve_check           # CVE database queries
+      - owasp_top10         # OWASP Top 10 coverage
+      - cwe_mapping         # CWE classification
+
+    output_formats:
+      - json                # REVIEW-PROMPT.md compliant JSON
+      - markdown            # Human-readable Markdown
+      - sarif               # IDE integration (SARIF format)
+
+    severity_levels:
+      - Critical            # Immediate fix required
+      - High                # Fix before merge
+      - Medium              # Fix within sprint
+      - Low                 # Nice to have
+      - Informational       # Advisory only
+
+  # -------------------------------------------------------------------------
+  # Quality-Focused Profile
+  # Primary: Qwen (Fast code quality + refactoring)
+  # Fallback: Codex (Advanced complexity analysis)
+  # -------------------------------------------------------------------------
+  quality-focused:
+    description: "High-speed code quality review with refactoring suggestions"
+    primary: qwen
+    fallback: codex
+    timeout: 300  # 5 minutes (fast review)
+
+    features:
+      - refactor_suggestions   # Alternative implementations
+      - type_safety            # Type checking and inference
+      - code_smells            # Anti-pattern detection
+      - complexity_analysis    # Cyclomatic complexity
+      - duplication_detection  # Copy-paste detection
+
+    output_formats:
+      - json                # REVIEW-PROMPT.md compliant JSON
+      - markdown            # With suggestion blocks
+
+    fast_mode:
+      enabled: true
+      timeout: 120          # 2 minutes
+      priority_filter: [0, 1]  # P0-P1 only
+
+    suggestion_format:
+      include_diff: true
+      preserve_indent: true
+      max_length: 50        # Lines
+
+  # -------------------------------------------------------------------------
+  # Enterprise-Focused Profile
+  # Primary: Droid (Enterprise standards + compliance)
+  # Fallback: Claude Comprehensive (Broad analysis)
+  # -------------------------------------------------------------------------
+  enterprise-focused:
+    description: "Enterprise-grade review with compliance and audit trails"
+    primary: droid
+    fallback: claude
+    timeout: 900  # 15 minutes (comprehensive analysis)
+
+    features:
+      - compliance_check     # Regulatory compliance
+      - audit_trail          # Audit log generation
+      - sla_validation       # SLA adherence check
+      - performance_risk     # Performance impact assessment
+      - reliability_metrics  # Reliability scoring
+
+    output_formats:
+      - json                # REVIEW-PROMPT.md compliant JSON
+      - markdown            # Executive summary
+      - html                # Audit-ready report
+
+    compliance_frameworks:
+      - GDPR                # EU data protection
+      - SOC2                # Service organization controls
+      - HIPAA               # Healthcare data protection
+      - PCI-DSS             # Payment card security
+
+    audit_requirements:
+      log_retention_days: 90
+      include_timestamps: true
+      track_reviewer_id: true
+      sign_reports: false   # Digital signatures (future)
+
+  # -------------------------------------------------------------------------
+  # Balanced Profile (Default)
+  # Uses all three review types with moderate timeouts
+  # -------------------------------------------------------------------------
+  balanced:
+    description: "Balanced review covering security, quality, and enterprise standards"
+
+    workflows:
+      - type: security
+        profile: security-focused
+        timeout: 600
+
+      - type: quality
+        profile: quality-focused
+        timeout: 300
+
+      - type: enterprise
+        profile: enterprise-focused
+        timeout: 900
+
+    parallel_execution: true
+    aggregate_results: true
+
+  # -------------------------------------------------------------------------
+  # Fast Profile (CI/CD Integration)
+  # Quick reviews for pre-commit hooks and CI pipelines
+  # -------------------------------------------------------------------------
+  fast:
+    description: "Fast review for CI/CD pipelines"
+
+    workflows:
+      - type: quality
+        profile: quality-focused
+        timeout: 120
+        fast_mode: true
+
+      - type: security
+        profile: security-focused
+        timeout: 300
+        priority_filter: [0, 1]  # Critical/High only
+
+    parallel_execution: true
+    aggregate_results: false
+
+# ============================================================================
+# AI Configuration
+# ============================================================================
+
+ai_configs:
+  gemini:
+    wrapper_path: "bin/gemini-wrapper.sh"
+    adapter_path: "scripts/review/lib/review-adapters/adapter-gemini.sh"
+    default_timeout: 600
+    requires_api_key: GEMINI_API_KEY
+    capabilities:
+      - web_search
+      - multi_language
+      - large_context
+
+  claude:
+    wrapper_path: "bin/claude-wrapper.sh"
+    # Note: Uses existing scripts/claude-review.sh
+    default_timeout: 600
+    requires_api_key: CLAUDE_API_KEY
+    capabilities:
+      - comprehensive_analysis
+      - code_generation
+      - large_context
+
+  claude-security:
+    wrapper_path: "bin/claude-wrapper.sh"
+    adapter_path: "scripts/review/lib/review-adapters/adapter-claude-security.sh"
+    # Note: Uses existing scripts/claude-security-review.sh
+    default_timeout: 900
+    requires_api_key: CLAUDE_API_KEY
+    capabilities:
+      - security_analysis
+      - owasp_expertise
+      - cwe_mapping
+
+  qwen:
+    wrapper_path: "bin/qwen-wrapper.sh"
+    adapter_path: "scripts/review/lib/review-adapters/adapter-qwen.sh"
+    default_timeout: 300
+    requires_api_key: QWEN_API_KEY
+    capabilities:
+      - fast_review
+      - refactoring
+      - multi_language
+
+  codex:
+    wrapper_path: "bin/codex-wrapper.sh"
+    # Note: Uses existing scripts/codex-review.sh
+    default_timeout: 600
+    requires_api_key: CODEX_API_KEY
+    capabilities:
+      - complexity_analysis
+      - bug_detection
+      - optimization
+
+  droid:
+    wrapper_path: "bin/droid-wrapper.sh"
+    adapter_path: "scripts/review/lib/review-adapters/adapter-droid.sh"
+    default_timeout: 900
+    requires_api_key: DROID_API_KEY
+    capabilities:
+      - enterprise_standards
+      - compliance_check
+      - audit_trail
+
+# ============================================================================
+# Output Configuration
+# ============================================================================
+
+output:
+  default_dir: "logs/multi-ai-reviews"
+
+  formats:
+    json:
+      enabled: true
+      schema: "REVIEW-PROMPT.md"
+      validate: true
+
+    markdown:
+      enabled: true
+      include_summary: true
+      include_suggestions: true
+
+    sarif:
+      enabled: true
+      schema_version: "2.1.0"
+      tool_name: "multi-ai-review"
+
+    html:
+      enabled: true
+      template: "audit-report"
+      include_charts: false  # Future: metrics visualization
+
+  aggregation:
+    enabled: true
+    merge_duplicates: true
+    priority_merge_strategy: "highest"  # Use highest priority for duplicates
+    confidence_threshold: 0.7  # Min confidence score to include
+
+# ============================================================================
+# Feature Flags
+# ============================================================================
+
+features:
+  cve_caching:
+    enabled: true
+    cache_dir: "/tmp/cve-cache"
+    ttl_seconds: 86400  # 24 hours
+
+  web_search:
+    enabled: true
+    max_queries_per_review: 10
+
+  parallel_execution:
+    enabled: true
+    max_workers: 3
+
+  audit_logging:
+    enabled: true
+    log_dir: "logs/vibe"
+    format: "jsonl"
+
+# ============================================================================
+# Metadata
+# ============================================================================
+
+metadata:
+  version: "1.0.0"
+  schema_version: "1.0"
+  created: "2025-10-26"
+  updated: "2025-10-26"
+  author: "Multi-AI Orchestrium"
+  reference: "OPTION_D++_IMPLEMENTATION_PLAN.md"

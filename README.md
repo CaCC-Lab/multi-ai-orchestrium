@@ -265,6 +265,208 @@ tdd-multi-ai-review "レビュー"
 - ブロッキング: `blocking: true|false`
 - 入力参照: `input_from: ["qwen", "droid"]`
 
+## 🔧 3コアレビュースクリプト（REVIEW-PROMPT準拠）
+
+**NEW**: REVIEW-PROMPT.md準拠の統一フォーマットで、3つの専門特化レビュースクリプトが利用可能です。各スクリプトはPrimary AI + Fallback AI構成で、高い可用性を実現しています。
+
+### 概要
+
+| スクリプト | Primary AI | Fallback AI | 専門分野 | タイムアウト |
+|----------|-----------|-------------|---------|------------|
+| `security-review.sh` | Gemini | Claude Security | セキュリティ脆弱性検出、CVE検索 | 600秒 |
+| `quality-review.sh` | Qwen | Codex | コード品質、リファクタリング提案 | 300秒 |
+| `enterprise-review.sh` | Droid | Claude | エンタープライズ基準、コンプライアンス | 900秒 |
+
+### security-review.sh - セキュリティ特化レビュー
+
+**Primary AI:** Gemini（Web検索でCVE情報を自動取得）
+
+```bash
+# 基本使用方法
+bash scripts/review/security-review.sh --commit abc123
+
+# 出力形式指定
+bash scripts/review/security-review.sh --commit abc123 --format json     # JSON出力（デフォルト）
+bash scripts/review/security-review.sh --commit abc123 --format markdown # Markdown出力
+bash scripts/review/security-review.sh --commit abc123 --format sarif    # SARIF出力（IDE統合用）
+
+# タイムアウト調整
+bash scripts/review/security-review.sh --commit abc123 --timeout 900
+```
+
+**検出項目:**
+- SQLインジェクション（CWE-89）
+- XSS（CWE-79）
+- コマンドインジェクション（CWE-77, CWE-78）
+- パストラバーサル（CWE-22）
+- ハードコードされた秘密情報（CWE-798）
+- 不安全な暗号化（CWE-327）
+- CVE既知脆弱性（Gemini Web検索）
+
+**出力例:**
+```json
+{
+  "findings": [
+    {
+      "title": "[P1] セキュリティ脆弱性: SQLインジェクション",
+      "body": "user_input変数がサニタイズされずにSQL文に挿入されています...",
+      "confidence_score": 0.95,
+      "priority": 1,
+      "code_location": {
+        "file_path": "src/database.py",
+        "line_range": {"start": 42, "end": 45}
+      }
+    }
+  ],
+  "overall_correctness": "patch is incorrect",
+  "overall_confidence_score": 0.90
+}
+```
+
+### quality-review.sh - コード品質レビュー
+
+**Primary AI:** Qwen（高速コード解析、93.9% HumanEval）
+
+```bash
+# 基本使用方法
+bash scripts/review/quality-review.sh --commit abc123
+
+# 高速モード（120秒タイムアウト、P0-P1のみ）
+bash scripts/review/quality-review.sh --commit abc123 --fast
+
+# Markdown形式でリファクタリング提案を取得
+bash scripts/review/quality-review.sh --commit abc123 --format markdown
+```
+
+**検出項目:**
+- コードの可読性、保守性
+- 型安全性（TypeScript、Python等）
+- パフォーマンス問題（O(n²)アルゴリズム等）
+- リファクタリング提案（具体的なコード例付き）
+- ベストプラクティス違反
+
+**リファクタリング提案例:**
+```markdown
+### [P2] パフォーマンス改善: O(n²)からO(n)へ
+
+**Location:** `src/utils.py:15-20`
+
+#### 現在のコード:
+\`\`\`python
+for i in range(len(items)):
+    for j in range(len(items)):
+        if items[i] == items[j]:
+            duplicates.append(items[i])
+\`\`\`
+
+#### 提案コード:
+\`\`\`python
+seen = set()
+for item in items:
+    if item in seen:
+        duplicates.append(item)
+    seen.add(item)
+\`\`\`
+```
+
+### enterprise-review.sh - エンタープライズレビュー
+
+**Primary AI:** Droid（エンタープライズ基準、SLA適合性）
+
+```bash
+# 基本使用方法
+bash scripts/review/enterprise-review.sh --commit abc123
+
+# コンプライアンスモード（規制準拠チェックリスト付き）
+bash scripts/review/enterprise-review.sh --commit abc123 --compliance
+
+# 監査用HTMLレポート生成
+bash scripts/review/enterprise-review.sh --commit abc123 --format html
+```
+
+**検出項目:**
+- SLA適合性（可用性、パフォーマンス、信頼性）
+- 監査ログの十分性
+- セキュリティ標準遵守（NIST、ISO27001等）
+- スケーラビリティリスク
+- 技術的負債の評価
+- コンプライアンスチェックリスト
+
+**コンプライアンスレポート例:**
+```markdown
+## Compliance Checklist
+
+- [x] Security: OWASP Top 10対応
+- [x] Privacy: GDPR準拠（個人情報保護）
+- [x] Audit: 監査ログ記録
+- [ ] Performance: SLA目標（99.9%可用性）未達成
+- [x] Reliability: エラーハンドリング適切
+```
+
+### Primary/Fallback機構
+
+各スクリプトはPrimary AIがタイムアウトまたはエラーの場合、自動的にFallback AIに切り替わります：
+
+**動作フロー:**
+```
+1. Primary AI実行（Gemini/Qwen/Droid）
+   ↓
+2. タイムアウト/エラー検出
+   ↓
+3. Fallback AI自動実行（Claude Security/Codex/Claude）
+   ↓
+4. レポート生成（JSONまたはMarkdown）
+```
+
+**Fallback発生時のログ:**
+```bash
+[WARN] Primary AI (Gemini) timed out after 600s
+[INFO] Switching to fallback AI (Claude Security)
+[INFO] Fallback AI completed successfully
+```
+
+### YAML設定によるカスタマイズ
+
+`config/review-profiles.yaml`を編集して、AI割り当て・タイムアウト・機能を変更できます：
+
+```yaml
+profiles:
+  security-focused:
+    primary: gemini
+    fallback: claude-security
+    timeout: 600
+    features:
+      - web_search
+      - cve_check
+
+  quality-focused:
+    primary: qwen
+    fallback: codex
+    timeout: 300
+    features:
+      - refactor_suggestions
+      - type_safety
+
+  enterprise-focused:
+    primary: droid
+    fallback: claude
+    timeout: 900
+    features:
+      - compliance_check
+      - audit_trail
+```
+
+### デバッグモード
+
+デバッグ出力を有効化するには、環境変数`DEBUG_REVIEW=1`を設定します：
+
+```bash
+# デバッグ出力を有効化
+DEBUG_REVIEW=1 bash scripts/review/quality-review.sh --commit abc123
+```
+
+---
+
 ## 🔍 Claude Code Review CLIスクリプト
 
 プロジェクトには、Claude MCPを活用した2つの独立したレビュースクリプトが含まれています：

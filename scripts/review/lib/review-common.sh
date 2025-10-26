@@ -188,8 +188,8 @@ EOF
 # Usage: vibe_review_error <review_type> <ai_name> <error_message>
 vibe_review_error() {
     local review_type="$1"
-    local ai_name="$2"
-    local error_msg="$3"
+    local ai_name="${2:-unknown}"
+    local error_msg="${3:-no error message provided}"
 
     local metadata
     metadata=$(cat << EOF
@@ -254,13 +254,81 @@ sanitize_file_path() {
     # Remove repository root prefix to get relative path
     local relative_path="${file_path#$repo_root/}"
 
-    # Validate: no path traversal attempts
-    if [[ "$relative_path" =~ \.\. ]]; then
-        echo "Error: Path traversal detected: $relative_path" >&2
-        return 1
+    # If path didn't change, it's already relative or outside repo
+    if [[ "$relative_path" == "$file_path" ]]; then
+        # Check if it's outside repo
+        if [[ "$file_path" =~ ^/ ]]; then
+            echo "Warning: File path is outside repository: $file_path" >&2
+        fi
     fi
 
     echo "$relative_path"
+}
+
+# P0.2.4.2: Convert JSON output to use relative paths
+# Usage: convert_json_to_relative_paths <json_file>
+# Returns: 0 if successful, 1 if error
+convert_json_to_relative_paths() {
+    local json_file="$1"
+
+    if [[ ! -f "$json_file" ]]; then
+        echo "Error: JSON file not found: $json_file" >&2
+        return 1
+    fi
+
+    local repo_root
+    repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || {
+        echo "Error: Not in a git repository" >&2
+        return 1
+    }
+
+    # Create temporary file
+    local temp_file
+    temp_file=$(mktemp)
+
+    # Use jq to convert absolute paths to relative paths
+    # This assumes the JSON has a structure like:
+    # { "findings": [ { "code_location": { "file_path": "/abs/path", ... } } ] }
+    if command -v jq &> /dev/null; then
+        jq --arg repo_root "$repo_root/" '
+            # Recursive function to process all file_path fields
+            walk(
+                if type == "object" and has("file_path") then
+                    .file_path = (
+                        if .file_path | startswith($repo_root) then
+                            .file_path | sub($repo_root; "")
+                        else
+                            .file_path
+                        end
+                    ) |
+                    # Add absolute_file_path field for reference
+                    if has("file_path") and (.file_path | startswith("/") | not) then
+                        .absolute_file_path = ($repo_root + .file_path)
+                    else
+                        .
+                    end
+                else
+                    .
+                end
+            )
+        ' "$json_file" > "$temp_file"
+
+        # Replace original file if jq succeeded
+        if [[ $? -eq 0 ]]; then
+            mv "$temp_file" "$json_file"
+            return 0
+        else
+            echo "Error: jq processing failed" >&2
+            rm -f "$temp_file"
+            return 1
+        fi
+    else
+        # Fallback: simple sed replacement (less reliable)
+        echo "Warning: jq not found, using sed fallback (may be incomplete)" >&2
+        sed -i "s|$repo_root||g" "$json_file"
+        rm -f "$temp_file"
+        return 0
+    fi
 }
 
 # ============================================================================
@@ -300,50 +368,13 @@ run_review_with_timeout() {
 # Returns: Timeout in seconds (stdout)
 get_default_timeout() {
     local ai_name="$1"
-    echo "${DEFAULT_TIMEOUTS[$ai_name]:-300}"
-}
 
-# ============================================================================
-# API Key Management
-# ============================================================================
+    # Temporarily disable 'unbound variable' check for associative array access
+    set +u
+    local timeout="${DEFAULT_TIMEOUTS[$ai_name]:-300}"
+    set -u
 
-# Check if required API keys are set
-# Usage: check_api_keys <ai_name> [fallback_ai_name]
-# Returns: 0 if all keys present, 1 if missing
-check_api_keys() {
-    local ai_name="$1"
-    local fallback_ai="${2:-}"
-    local missing_keys=()
-
-    # Check primary AI key
-    local env_var_name="${ai_name^^}_API_KEY"
-    if [[ -z "${!env_var_name:-}" ]]; then
-        missing_keys+=("$env_var_name")
-    fi
-
-    # Check fallback AI key if specified
-    if [[ -n "$fallback_ai" ]]; then
-        local fallback_var="${fallback_ai^^}_API_KEY"
-        if [[ -z "${!fallback_var:-}" ]]; then
-            missing_keys+=("$fallback_var")
-        fi
-    fi
-
-    # Report missing keys
-    if [[ ${#missing_keys[@]} -gt 0 ]]; then
-        echo "Error: Missing required API keys:" >&2
-        for key in "${missing_keys[@]}"; do
-            echo "  - $key" >&2
-        done
-        echo "" >&2
-        echo "Please set environment variables before running:" >&2
-        for key in "${missing_keys[@]}"; do
-            echo "  export $key=\"your-api-key\"" >&2
-        done
-        return 1
-    fi
-
-    return 0
+    echo "$timeout"
 }
 
 # ============================================================================
@@ -360,9 +391,9 @@ export -f vibe_review_done
 export -f vibe_review_error
 export -f sanitize_commit_input
 export -f sanitize_file_path
+export -f convert_json_to_relative_paths
 export -f run_review_with_timeout
 export -f get_default_timeout
-export -f check_api_keys
 
 # Export configuration variables
 export REVIEW_PROJECT_ROOT
