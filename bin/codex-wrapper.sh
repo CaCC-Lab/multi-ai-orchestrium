@@ -11,7 +11,8 @@ set -euo pipefail
 AI_NAME="Codex"
 
 # Codex CLI command array
-AI_COMMAND=("codex" "exec")
+# Enable workspace-write mode for file creation/modification
+AI_COMMAND=("codex" "exec" "--sandbox" "workspace-write")
 
 # AGENTS.md統合: タスク分類により動的調整（軽量: 45s, 標準: 90s, 重要: 270s）
 # - デフォルト: 90秒（1.5分） - 深い分析に最適
