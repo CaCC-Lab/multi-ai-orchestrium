@@ -396,6 +396,302 @@ bash scripts/multi-ai-review.sh --type all
 multi-ai-quad-review "追加検証"
 ```
 
+## 5AI個別レビュースクリプト
+
+**NEW (v3.1.0)**: 各AIの特性を最大限に活かした5つの専用レビュースクリプトが利用可能です。これらは`scripts/`ディレクトリに配置され、REVIEW-PROMPT.mdをベースに各AIの強みに特化したレビューを提供します。
+
+### 概要
+
+5つのAI（Gemini, Qwen, Cursor, Amp, Droid）それぞれに専用のレビュースクリプトがあり、異なる観点からコードをレビューします：
+
+| スクリプト | AI | 専門領域 | 推奨用途 | タイムアウト |
+|-----------|-----|---------|---------|------------|
+| `gemini-review.sh` | Gemini 2.5 | セキュリティ & アーキテクチャ | セキュリティクリティカルな変更 | 900秒 |
+| `qwen-review.sh` | Qwen3-Coder | コード品質 & パターン | 実装品質の検証 | 600秒 |
+| `cursor-review.sh` | Cursor | IDE統合 & DX | 開発者体験の改善 | 600秒 |
+| `amp-review.sh` | Amp | プロジェクト管理 & ドキュメント | ドキュメント・計画の検証 | 600秒 |
+| `droid-review.sh` | Droid | エンタープライズ基準 | 本番リリース前の検証 | 900秒 |
+
+### 基本使用法
+
+すべてのスクリプトは同じインターフェースを持ち、以下のオプションをサポートします：
+
+```bash
+# 基本形式
+bash scripts/{ai}-review.sh [OPTIONS]
+
+# 共通オプション
+--commit HASH       # レビュー対象コミット（デフォルト: HEAD）
+--timeout SECONDS   # タイムアウト秒数
+--output PATH       # 出力ディレクトリパス
+--help              # ヘルプメッセージを表示
+```
+
+#### AI固有オプション
+
+各スクリプトは、専門領域に特化したカスタムオプションを提供します：
+
+**qwen-review.sh（コード品質特化）:**
+```bash
+--focus AREA        # フォーカス領域: patterns | quality | performance
+```
+
+**cursor-review.sh（開発者体験特化）:**
+```bash
+--focus AREA        # フォーカス領域: readability | ide-friendliness | completion
+```
+
+**amp-review.sh（プロジェクト管理特化）:**
+```bash
+--focus AREA        # フォーカス領域: docs | communication | planning
+```
+
+**droid-review.sh（エンタープライズ特化）:**
+```bash
+--focus AREA           # フォーカス領域: compliance | scalability | reliability
+--compliance-mode      # コンプライアンスモード有効化（GDPR, SOC2, HIPAA）
+```
+
+### 使用例
+
+```bash
+# Gemini - セキュリティレビュー
+bash scripts/gemini-review.sh --commit abc123 --timeout 900
+
+# Qwen - コード品質レビュー（パターンにフォーカス）
+bash scripts/qwen-review.sh --focus patterns
+
+# Cursor - 開発者体験レビュー（可読性にフォーカス）
+bash scripts/cursor-review.sh --focus readability
+
+# Amp - ドキュメントレビュー
+bash scripts/amp-review.sh --focus docs
+
+# Droid - エンタープライズレビュー（コンプライアンスモード）
+bash scripts/droid-review.sh --compliance-mode --timeout 900
+```
+
+### 出力形式
+
+各スクリプトは、以下の形式で結果を出力します：
+
+**JSON形式:**
+```
+logs/{ai}-reviews/{timestamp}_{commit}_{ai}.json
+```
+- 構造化されたレビュー結果
+- Priority（P0-P3）付きfindings
+- 重要度（Critical, High, Medium, Low）
+- 信頼度スコア
+
+**Markdown形式:**
+```
+logs/{ai}-reviews/{timestamp}_{commit}_{ai}.md
+```
+- 人間が読みやすいレポート
+- エグゼクティブサマリー
+- 詳細なfindings
+- 推奨アクション
+
+**VibeLoggerログ:**
+```
+logs/vibe/{YYYYMMDD}/{ai}_review_{HH}.jsonl
+```
+- AI最適化構造化ログ
+- 実行メトリクス
+- デバッグ情報
+
+**シンボリックリンク（最新）:**
+```
+logs/{ai}-reviews/latest_{ai}.json
+logs/{ai}-reviews/latest_{ai}.md
+```
+
+### 各AIの専門領域と特徴
+
+#### Gemini (gemini-review.sh) - セキュリティ & アーキテクチャ
+
+**専門領域:**
+- OWASP Top 10脆弱性検出
+- セキュリティベストプラクティス検証
+- アーキテクチャ設計レビュー
+- スケーラビリティ評価
+
+**推奨シナリオ:**
+- セキュリティクリティカルな変更
+- 認証・認可システムの実装
+- 外部APIとの統合
+- データ処理パイプライン
+
+**出力例:**
+- CWE番号付きセキュリティfinding
+- CVSS v3.1スコア
+- アーキテクチャ改善提案
+- パフォーマンス最適化案
+
+#### Qwen (qwen-review.sh) - コード品質 & パターン
+
+**専門領域:**
+- コード品質評価（93.9% HumanEval精度）
+- デザインパターン検出
+- パフォーマンス最適化
+- 技術的負債評価
+
+**推奨シナリオ:**
+- 新機能の実装レビュー
+- リファクタリング検証
+- アルゴリズム最適化
+- コード複雑度の削減
+
+**出力例:**
+- 保守性インデックス
+- 循環的複雑度
+- パターン適合度
+- 技術的負債見積もり
+
+#### Cursor (cursor-review.sh) - IDE統合 & 開発者体験
+
+**専門領域:**
+- コード可読性評価
+- IDE統合性チェック
+- 自動補完フレンドリー度
+- リファクタリング機会検出
+
+**推奨シナリオ:**
+- UI/UXコードのレビュー
+- APIクライアント実装
+- 開発者向けライブラリ
+- チーム開発のコード標準化
+
+**出力例:**
+- 可読性スコア
+- IDEナビゲーション効率
+- 自動補完カバレッジ
+- リファクタリング影響分析
+
+#### Amp (amp-review.sh) - プロジェクト管理 & ドキュメント
+
+**専門領域:**
+- ドキュメント品質評価
+- ステークホルダーコミュニケーション
+- 技術的負債追跡
+- スプリント計画整合性
+
+**推奨シナリオ:**
+- APIドキュメント作成
+- README/ガイドの更新
+- プロジェクト計画の検証
+- リリースノート作成
+
+**出力例:**
+- ドキュメントカバレッジスコア
+- コミュニケーション明確度
+- スプリント整合性チェック
+- リスク評価
+
+#### Droid (droid-review.sh) - エンタープライズ基準
+
+**専門領域:**
+- エンタープライズ品質基準
+- コンプライアンス検証（GDPR, SOC2, HIPAA）
+- スケーラビリティ評価
+- 本番環境適合性
+
+**推奨シナリオ:**
+- 本番リリース前の最終検証
+- エンタープライズ顧客向け機能
+- 規制対応が必要な実装
+- ミッションクリティカルなシステム
+
+**出力例:**
+- エンタープライズチェックリストスコア
+- コンプライアンス違反検出
+- スケーラビリティボトルネック
+- SLA/SLO影響分析
+
+### ワークフロー統合例
+
+5AI個別レビュースクリプトは、既存のワークフローと組み合わせて使用できます：
+
+**段階的レビューワークフロー:**
+```bash
+# 1. 実装前ディスカッション
+multi-ai-discuss-before "新機能の実装計画"
+
+# 2. TDDサイクルで実装
+tdd-multi-ai-cycle "新機能"
+
+# 3. コード品質レビュー（Qwen）
+bash scripts/qwen-review.sh --focus quality
+
+# 4. セキュリティレビュー（Gemini）
+bash scripts/gemini-review.sh
+
+# 5. 開発者体験レビュー（Cursor）
+bash scripts/cursor-review.sh --focus readability
+
+# 6. ドキュメントレビュー（Amp）
+bash scripts/amp-review.sh --focus docs
+
+# 7. エンタープライズレビュー（Droid）
+bash scripts/droid-review.sh --compliance-mode
+
+# 8. 最終的な統合レビュー
+bash scripts/multi-ai-review.sh --type all
+```
+
+**選択的レビューワークフロー:**
+```bash
+# セキュリティクリティカルな変更 → Geminiのみ
+bash scripts/gemini-review.sh --timeout 900
+
+# コード実装 → Qwenのみ
+bash scripts/qwen-review.sh --focus patterns
+
+# ドキュメント変更 → Ampのみ
+bash scripts/amp-review.sh --focus docs
+
+# 本番リリース → Droidのみ
+bash scripts/droid-review.sh --compliance-mode
+```
+
+### 推奨レビュー戦略
+
+**変更タイプ別の推奨AI:**
+
+| 変更タイプ | 推奨AI | 理由 |
+|----------|--------|------|
+| セキュリティパッチ | Gemini + Droid | セキュリティ検証 + エンタープライズ基準 |
+| 新機能実装 | Qwen + Cursor | コード品質 + 開発者体験 |
+| リファクタリング | Qwen + Droid | パターン改善 + 保守性 |
+| ドキュメント更新 | Amp + Cursor | ドキュメント品質 + 可読性 |
+| 本番リリース | 全5AI | 包括的検証 |
+
+**レビュー深度別の推奨:**
+
+- **高速チェック（5-10分）**: Qwen単体
+- **標準レビュー（15-20分）**: Qwen + Gemini
+- **包括レビュー（30-40分）**: 全5AI並列実行
+- **最大品質（60分+）**: 全5AI + Quad Review
+
+### テスト状況
+
+すべてのスクリプトは包括的なテストスイートでカバーされています：
+
+- **テストカバレッジ**: 70-80% ブランチカバレッジ（本番利用可能レベル）
+- **テストケース数**: 104テスト（各スクリプト26テスト）
+- **テスト実行**: `bash tests/run-all-review-tests.sh`
+- **個別テスト**: `bash tests/test-{ai}-review.sh`
+
+詳細なテストドキュメントは`docs/test-observations/`を参照してください。
+
+### 関連ドキュメント
+
+- **実装計画**: `docs/FIVE_AI_REVIEW_SCRIPTS_IMPLEMENTATION_PLAN.md`
+- **テスト観察表**: `docs/test-observations/test-{ai}-review-observation.md`
+- **個別ガイド**: `docs/reviews/{ai}-review-guide.md`（作成予定）
+- **包括ガイド**: `docs/FIVE_AI_REVIEW_GUIDE.md`（作成予定）
+
 ## 設定システム
 
 ### YAMLプロファイル構造
