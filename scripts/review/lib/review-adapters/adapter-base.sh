@@ -187,10 +187,10 @@ validate_review_output() {
 get_default_timeout() {
     local ai_name="$1"
 
-    # Default timeout values based on implementation plan
+    # Default timeout values based on implementation plan and real-world usage
     case "$ai_name" in
         gemini)
-            echo "600"  # 10 minutes (Web search overhead)
+            echo "900"  # 15 minutes (Web search + security analysis overhead)
             ;;
         qwen)
             echo "300"  # 5 minutes (fast review)

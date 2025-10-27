@@ -31,10 +31,10 @@ call_claude_review() {
         return $exit_code
     fi
 
-    # Extract JSON from markdown code fence (```json ... ```)
-    # Use sed to extract lines between ```json and ``` (excluding both markers)
+    # Extract JSON from markdown code fence (\`\`\`json ... \`\`\`)
+    # Use sed to extract lines between \`\`\`json and \`\`\` (excluding both markers)
     local json_output
-    json_output=$(echo "$raw_output" | sed -n '/^```json$/,/^```$/{/^```/d;p;}')
+    json_output=$(echo "$raw_output" | sed -n '/^\`\`\`json$/,/^\`\`\`$/{/^\`\`\`/d;p;}')
 
     if [[ -z "$json_output" ]]; then
         echo "Error: No JSON found in Claude output" >&2

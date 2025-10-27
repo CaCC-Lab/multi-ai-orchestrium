@@ -38,8 +38,8 @@ fi
 # AI name for this adapter
 AI_NAME="gemini"
 
-# Default timeout (10 minutes for Web search overhead)
-DEFAULT_TIMEOUT=600
+# Default timeout (15 minutes for Web search + security analysis overhead)
+DEFAULT_TIMEOUT=900
 
 # CVE cache configuration (P0.3.2.1: mandatory feature for performance)
 CVE_CACHE_ENABLED="${CVE_CACHE_ENABLED:-true}"
