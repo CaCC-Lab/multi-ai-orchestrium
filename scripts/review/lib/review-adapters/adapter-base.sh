@@ -120,10 +120,29 @@ call_ai_wrapper() {
     # Use --non-interactive to avoid approval prompts in automated review context
     # Use stdin instead of --prompt for large prompts to avoid argument length limits
     # Suppress stderr to get only JSON output (2>/dev/null)
+
+    # SIGPIPE Fix: Use temp file instead of pipe to avoid Exit code 141
+    # When timeout kills the wrapper, a pipe would cause SIGPIPE to echo process
+    local temp_prompt_file
+    temp_prompt_file=$(mktemp -t ai-review-prompt.XXXXXX)
+    chmod 600 "$temp_prompt_file"
+
+    # Ensure cleanup on exit/interrupt
+    trap "rm -f '$temp_prompt_file'" EXIT INT TERM
+
+    # Write prompt to temp file
+    echo "$prompt" > "$temp_prompt_file"
+
+    # Execute with stdin redirect (no pipe, no SIGPIPE risk)
     local output
-    debug_log "Executing wrapper with stdin..."
-    output=$(echo "$prompt" | WRAPPER_NON_INTERACTIVE=1 timeout "${timeout}s" "$wrapper_script" --stdin --non-interactive 2>/dev/null)
+    debug_log "Executing wrapper with temp file stdin..."
+    output=$(WRAPPER_NON_INTERACTIVE=1 timeout "${timeout}s" "$wrapper_script" --stdin --non-interactive < "$temp_prompt_file" 2>/dev/null)
     local exit_code=$?
+
+    # Cleanup temp file
+    rm -f "$temp_prompt_file"
+    trap - EXIT INT TERM
+
     debug_log "Wrapper exit code: $exit_code"
     debug_log "Output preview (first 500 chars): $(echo "$output" | head -c 500)"
 

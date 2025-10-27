@@ -22,9 +22,23 @@ call_claude_review() {
     fi
 
     # Execute Claude with timeout and extract JSON from markdown code fence
+    # SIGPIPE Fix: Use temp file instead of pipe to avoid Exit code 141
+    local temp_prompt_file
+    temp_prompt_file=$(mktemp -t claude-review-prompt.XXXXXX)
+    chmod 600 "$temp_prompt_file"
+    trap "rm -f '$temp_prompt_file'" EXIT INT TERM
+
+    # Write prompt to temp file
+    echo "$prompt" > "$temp_prompt_file"
+
+    # Execute with stdin redirect (no pipe, no SIGPIPE risk)
     local raw_output
-    raw_output=$(echo "$prompt" | timeout "${timeout}s" bash "$wrapper_script" --stdin 2>&1)
+    raw_output=$(timeout "${timeout}s" bash "$wrapper_script" --stdin < "$temp_prompt_file" 2>&1)
     local exit_code=$?
+
+    # Cleanup
+    rm -f "$temp_prompt_file"
+    trap - EXIT INT TERM
 
     if [[ $exit_code -ne 0 ]]; then
         echo "Error: AI execution failed with code $exit_code" >&2
