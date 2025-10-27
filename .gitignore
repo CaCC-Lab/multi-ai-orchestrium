@@ -71,6 +71,8 @@ wheels/
 !scripts/orchestrate/lib/**
 !scripts/tdd/lib/
 !scripts/tdd/lib/**
+!scripts/review/lib/
+!scripts/review/lib/**
 
 # ========== Environment & Secrets ==========
 # Environment files
