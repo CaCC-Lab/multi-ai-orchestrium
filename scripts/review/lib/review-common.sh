@@ -73,15 +73,24 @@ get_git_diff() {
 validate_commit_hash() {
     local commit="$1"
 
-    # Check format (40-char SHA-1 or short hash)
-    if ! [[ "$commit" =~ ^[0-9a-f]{7,40}$ ]]; then
-        echo "Error: Invalid commit hash format: $commit" >&2
+    # Skip validation if not in a git repository
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+        echo "Warning: Not in a git repository, skipping commit validation" >&2
+        return 0
+    fi
+
+    # First, try to resolve the reference (handles HEAD, branch names, tags, etc.)
+    local resolved_commit
+    resolved_commit=$(git rev-parse "$commit" 2>/dev/null)
+
+    if [[ $? -ne 0 ]]; then
+        echo "Error: Unable to resolve commit reference: $commit" >&2
         return 1
     fi
 
-    # Verify commit exists in repository
-    if ! git cat-file -e "${commit}^{commit}" 2>/dev/null; then
-        echo "Error: Commit not found: $commit" >&2
+    # Verify the resolved commit exists
+    if ! git cat-file -e "${resolved_commit}^{commit}" 2>/dev/null; then
+        echo "Error: Commit not found: $commit (resolved to: $resolved_commit)" >&2
         return 1
     fi
 
@@ -378,6 +387,54 @@ get_default_timeout() {
 }
 
 # ============================================================================
+# JSON Validation
+# ============================================================================
+
+# Validate review output JSON format
+# Usage: validate_review_output <json_string>
+# Returns: 0 if valid, 1 if invalid
+validate_review_output() {
+    local json_content="$1"
+
+    # Check if jq is available
+    if ! command -v jq &> /dev/null; then
+        echo "Warning: jq not found, skipping JSON validation" >&2
+        return 0
+    fi
+
+    # Check if input is valid JSON
+    if ! echo "$json_content" | jq empty 2>/dev/null; then
+        echo "Error: Invalid JSON format" >&2
+        return 1
+    fi
+
+    # Check required fields exist
+    local required_fields=("findings" "overall_correctness" "overall_explanation")
+    for field in "${required_fields[@]}"; do
+        if ! echo "$json_content" | jq -e ".$field" >/dev/null 2>&1; then
+            echo "Error: Missing required field: $field" >&2
+            return 1
+        fi
+    done
+
+    # Validate overall_correctness value
+    local correctness
+    correctness=$(echo "$json_content" | jq -r '.overall_correctness')
+    if [[ "$correctness" != "patch is correct" ]] && [[ "$correctness" != "patch is incorrect" ]]; then
+        echo "Error: Invalid overall_correctness value: $correctness (must be 'patch is correct' or 'patch is incorrect')" >&2
+        return 1
+    fi
+
+    # Validate findings is an array
+    if ! echo "$json_content" | jq -e '.findings | type == "array"' >/dev/null 2>&1; then
+        echo "Error: findings field must be an array" >&2
+        return 1
+    fi
+
+    return 0
+}
+
+# ============================================================================
 # Exports
 # ============================================================================
 
@@ -394,6 +451,7 @@ export -f sanitize_file_path
 export -f convert_json_to_relative_paths
 export -f run_review_with_timeout
 export -f get_default_timeout
+export -f validate_review_output
 
 # Export configuration variables
 export REVIEW_PROJECT_ROOT

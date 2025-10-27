@@ -21,13 +21,13 @@ if [[ ! -f "$REVIEW_LIB" ]]; then
 fi
 source "$REVIEW_LIB"
 
-# Load Qwen adapter (primary)
-QWEN_ADAPTER="${SCRIPT_DIR}/lib/review-adapters/adapter-qwen.sh"
-if [[ ! -f "$QWEN_ADAPTER" ]]; then
-    echo "Error: adapter-qwen.sh not found at: $QWEN_ADAPTER" >&2
+# Load Claude adapter (primary) - Changed from Qwen for better reliability
+CLAUDE_ADAPTER="${SCRIPT_DIR}/lib/review-adapters/adapter-claude.sh"
+if [[ ! -f "$CLAUDE_ADAPTER" ]]; then
+    echo "Error: adapter-claude.sh not found at: $CLAUDE_ADAPTER" >&2
     exit 1
 fi
-source "$QWEN_ADAPTER"
+source "$CLAUDE_ADAPTER"
 
 # ============================================================================
 # Configuration
@@ -35,9 +35,9 @@ source "$QWEN_ADAPTER"
 
 REVIEW_TYPE="quality"
 DEFAULT_COMMIT="HEAD"
-DEFAULT_TIMEOUT=300  # 5 minutes for fast Qwen review
+DEFAULT_TIMEOUT=600  # 10 minutes for Claude quality review (changed from 300s Qwen)
 FALLBACK_TIMEOUT=600  # 10 minutes for Codex review
-FAST_MODE_TIMEOUT=120  # 2 minutes for ultra-fast mode
+FAST_MODE_TIMEOUT=300  # 5 minutes for fast mode (increased from 120s for Claude)
 
 # Fast mode configuration
 FAST_MODE=false
@@ -55,14 +55,14 @@ usage() {
     cat <<EOF
 Usage: $0 [OPTIONS]
 
-Code quality-focused review using Qwen AI with Codex fallback
+Code quality-focused review using Claude AI with Codex fallback
 
 OPTIONS:
     --commit HASH       Commit hash to review (default: HEAD)
-    --timeout SECONDS   Primary AI timeout in seconds (default: 300)
+    --timeout SECONDS   Primary AI timeout in seconds (default: 600)
     --output-dir PATH   Output directory for reports (default: auto-generated)
     --format FORMAT     Output format: json|markdown|all (default: json,markdown)
-    --fast              Enable fast mode (120s timeout, P0-P1 only)
+    --fast              Enable fast mode (300s timeout, P0-P1 only)
     --priority P0,P1    Filter findings by priority (e.g., "0,1" for P0-P1)
     --no-fallback       Disable fallback to Codex on timeout
     --help              Show this help message
@@ -75,14 +75,13 @@ EXAMPLES:
     $0 --fast
 
     # Review specific commit with custom timeout
-    $0 --commit abc123 --timeout 600
+    $0 --commit abc123 --timeout 900
 
     # Filter P0-P1 findings
     $0 --priority 0,1
 
 ENVIRONMENT VARIABLES:
-    QWEN_API_KEY        Required: Qwen API key
-    CODEX_API_KEY       Required for fallback: Codex API key
+    Note: Claude via MCP does not require API keys
 
 For more information, see: docs/REVIEW_ARCHITECTURE.md
 EOF
@@ -151,11 +150,19 @@ fi
 # Validation & Setup
 # ============================================================================
 
-# Sanitize and validate commit input
-COMMIT=$(sanitize_commit_input "$COMMIT")
-if [[ "$COMMIT" != "HEAD" ]]; then
-    validate_commit_hash "$COMMIT" || exit 1
+# Resolve commit reference first (handles HEAD, branches, tags, etc.)
+# Only if in a git repository
+if git rev-parse --git-dir > /dev/null 2>&1; then
+    COMMIT=$(git rev-parse "$COMMIT" 2>/dev/null)
+    if [[ $? -ne 0 ]]; then
+        echo "Error: Unable to resolve commit reference: $COMMIT" >&2
+        exit 1
+    fi
 fi
+
+# Sanitize and validate the resolved commit hash
+COMMIT=$(sanitize_commit_input "$COMMIT")
+validate_commit_hash "$COMMIT" || exit 1
 
 # Setup output directories
 if [[ -z "$OUTPUT_DIR" ]]; then
@@ -166,7 +173,7 @@ fi
 mkdir -p "$OUTPUT_DIR"
 
 # ============================================================================
-# P1.3.2.2: Primary AI Execution - Qwen Fast Review
+# P1.3.2.2: Primary AI Execution - Claude Quality Review
 # ============================================================================
 
 execute_primary_review() {
@@ -174,87 +181,19 @@ execute_primary_review() {
     local timeout="$2"
     local output_dir="$3"
 
-    # P1.3.2.5: VibeLogger integration - review start
-    vibe_review_start "$REVIEW_TYPE" "qwen" "$commit"
+    # VibeLogger integration - review start
+    vibe_review_start "$REVIEW_TYPE" "claude" "$commit"
 
     if [[ "$FAST_MODE" == "true" ]]; then
-        echo "Fast mode enabled: 120s timeout, P0-P1 priority filter" >&2
+        echo "Fast mode enabled: ${FAST_MODE_TIMEOUT}s timeout, P0-P1 priority filter" >&2
     fi
 
-    # Get git diff
-    local diff_content
-    diff_content=$(get_git_diff "$commit") || {
-        vibe_review_error "$REVIEW_TYPE" "qwen" "Failed to get git diff for commit: $commit"
-        return 1
-    }
-
-    # Load base review prompt
-    local base_prompt
-    base_prompt=$(load_review_prompt) || {
-        vibe_review_error "$REVIEW_TYPE" "qwen" "Failed to load REVIEW-PROMPT.md"
-        return 1
-    }
-
-    # Construct full prompt with diff
-    local full_prompt
-    full_prompt=$(cat <<EOF
-$base_prompt
-
-# Code Diff to Review
-
-\`\`\`diff
-$diff_content
-\`\`\`
-
-# Code Quality Review Focus
-
-Please perform a code quality review with the following priorities:
-1. **Bug Detection**: Identify logic errors, edge cases, and potential crashes
-2. **Refactoring Opportunities**: Suggest cleaner, more maintainable alternatives
-3. **Type Safety**: Check for type inconsistencies and missing validations
-4. **Code Smells**: Detect duplications, long functions, high complexity
-5. **Performance**: Identify inefficient algorithms or resource usage
-
-# Requirements for Suggestions
-
-- Keep comments concise (1 paragraph maximum per finding)
-- For refactoring suggestions, provide alternative implementation using \`suggestion\` blocks:
-
-\`\`\`suggestion
-// Improved code here
-\`\`\`
-
-- Maintain proper indentation in suggestions
-- Focus on actionable, concrete improvements
-
-EOF
-)
-
-    # Add fast mode instructions
-    if [[ "$FAST_MODE" == "true" ]]; then
-        full_prompt+=$(cat <<EOF
-
-# Fast Mode Instructions
-
-- **Focus on P0-P1 critical issues only**
-- Skip minor style issues and low-priority suggestions
-- Provide brief, actionable feedback
-EOF
-)
-    fi
-
-    full_prompt+=$(cat <<EOF
-
-Provide output in the JSON format specified in the prompt above.
-EOF
-)
-
-    # Execute Qwen review with timeout
+    # Execute Claude quality review via adapter
     local review_output
     local exit_code=0
     local start_time=$(date +%s%3N)
 
-    review_output=$(call_qwen_review "$full_prompt" "$timeout") || exit_code=$?
+    review_output=$(execute_claude_quality_review "$commit" "$timeout" "$output_dir") || exit_code=$?
 
     local end_time=$(date +%s%3N)
     local duration_ms=$((end_time - start_time))
@@ -262,10 +201,10 @@ EOF
     # VibeLogger integration - review done
     local status="success"
     if [[ $exit_code -ne 0 ]]; then status="failure"; fi
-    vibe_review_done "$REVIEW_TYPE" "qwen" "$status" "$duration_ms" "0"
+    vibe_review_done "$REVIEW_TYPE" "claude" "$status" "$duration_ms" "0"
 
     if [[ $exit_code -ne 0 ]]; then
-        vibe_review_error "$REVIEW_TYPE" "qwen" "Primary review failed with exit code: $exit_code"
+        vibe_review_error "$REVIEW_TYPE" "claude" "Primary review failed with exit code: $exit_code"
         return $exit_code
     fi
 
@@ -278,19 +217,19 @@ EOF
     if ! validate_review_output "$review_output"; then
         echo "DEBUG: Validation failed. Saving output to /tmp/validation-failed.json" >&2
         echo "$review_output" > /tmp/validation-failed.json
-        vibe_review_error "$REVIEW_TYPE" "qwen" "Review output validation failed"
+        vibe_review_error "$REVIEW_TYPE" "claude" "Review output validation failed"
         return 1
     fi
 
     echo "DEBUG: Validation succeeded!" >&2
 
-    # P1.3.2.5: Apply priority filter if specified
+    # Apply priority filter if specified
     if [[ -n "$PRIORITY_FILTER" ]]; then
         review_output=$(filter_by_priority "$review_output" "$PRIORITY_FILTER")
     fi
 
     # Save output
-    echo "$review_output" > "$output_dir/qwen-review.json"
+    echo "$review_output" > "$output_dir/claude-review.json"
 
     return 0
 }
@@ -446,13 +385,13 @@ main() {
     fi
     echo "" >&2
 
-    # Execute primary review (Qwen)
+    # Execute primary review (Claude)
     if execute_primary_review "$COMMIT" "$TIMEOUT" "$OUTPUT_DIR"; then
         primary_success=true
-        primary_output="$OUTPUT_DIR/qwen-review.json"
-        echo "✓ Primary review (Qwen) completed successfully" >&2
+        primary_output="$OUTPUT_DIR/claude-review.json"
+        echo "✓ Primary review (Claude) completed successfully" >&2
     else
-        echo "✗ Primary review (Qwen) failed" >&2
+        echo "✗ Primary review (Claude) failed" >&2
 
         # Execute fallback if enabled
         if [[ "$ENABLE_FALLBACK" == "true" ]]; then

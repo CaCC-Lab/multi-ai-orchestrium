@@ -138,11 +138,19 @@ done
 # Validation & Setup
 # ============================================================================
 
-# Sanitize and validate commit input
-COMMIT=$(sanitize_commit_input "$COMMIT")
-if [[ "$COMMIT" != "HEAD" ]]; then
-    validate_commit_hash "$COMMIT" || exit 1
+# Resolve commit reference first (handles HEAD, branches, tags, etc.)
+# Only if in a git repository
+if git rev-parse --git-dir > /dev/null 2>&1; then
+    COMMIT=$(git rev-parse "$COMMIT" 2>/dev/null)
+    if [[ $? -ne 0 ]]; then
+        echo "Error: Unable to resolve commit reference: $COMMIT" >&2
+        exit 1
+    fi
 fi
+
+# Sanitize and validate the resolved commit hash
+COMMIT=$(sanitize_commit_input "$COMMIT")
+validate_commit_hash "$COMMIT" || exit 1
 
 # Setup output directories
 if [[ -z "$OUTPUT_DIR" ]]; then
@@ -238,6 +246,36 @@ EOF
 # ============================================================================
 # P1.3.1.3: Fallback AI - Claude Security
 # ============================================================================
+
+# Call Claude MCP for security review
+# Usage: call_claude_security_review <prompt> <timeout_seconds>
+# Returns: JSON review output on stdout, non-zero exit code on error
+call_claude_security_review() {
+    local prompt="$1"
+    local timeout="${2:-600}"
+
+    # Use claude MCP tool via wrapper (use PROJECT_ROOT for correct path)
+    local wrapper_script="${PROJECT_ROOT}/bin/claude-wrapper.sh"
+
+    if [[ ! -f "$wrapper_script" ]]; then
+        echo "Error: Claude wrapper not found: $wrapper_script" >&2
+        return 1
+    fi
+
+    # Execute Claude with timeout and extract JSON from markdown code fence
+    local raw_output
+    raw_output=$(echo "$prompt" | timeout "${timeout}s" bash "$wrapper_script" --stdin 2>&1)
+    local exit_code=$?
+
+    if [[ $exit_code -ne 0 ]]; then
+        return $exit_code
+    fi
+
+    # Extract JSON from markdown code fence (```json ... ```)
+    # Use sed to extract lines between ```json and ``` (excluding both markers)
+    echo "$raw_output" | sed -n '/^```json$/,/^```$/{/^```/d;p;}'
+    return 0
+}
 
 execute_fallback_review() {
     local commit="$1"

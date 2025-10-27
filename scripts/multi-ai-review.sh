@@ -562,8 +562,38 @@ HTML_FOOTER
 # P2.1.3: Main Execution Logic
 # ============================================================================
 
-# Get common arguments
-COMMON_ARGS=($(build_common_args))
+# Get common arguments - Build TWO versions for different script types
+# AI scripts (gemini, qwen, etc.) use --output
+# Type scripts (security-review, quality-review, etc.) use --output-dir
+
+# For AI scripts
+COMMON_ARGS_AI=()
+COMMON_ARGS_AI+=("--commit" "$COMMIT")
+if [[ -n "$TIMEOUT" ]]; then
+    COMMON_ARGS_AI+=("--timeout" "$TIMEOUT")
+fi
+if [[ -n "$OUTPUT_DIR" ]]; then
+    COMMON_ARGS_AI+=("--output" "$OUTPUT_DIR")
+fi
+if [[ -n "$FORMAT" ]]; then
+    COMMON_ARGS_AI+=("--format" "$FORMAT")
+fi
+
+# For Type scripts
+COMMON_ARGS_TYPE=()
+COMMON_ARGS_TYPE+=("--commit" "$COMMIT")
+if [[ -n "$TIMEOUT" ]]; then
+    COMMON_ARGS_TYPE+=("--timeout" "$TIMEOUT")
+fi
+if [[ -n "$OUTPUT_DIR" ]]; then
+    COMMON_ARGS_TYPE+=("--output-dir" "$OUTPUT_DIR")
+fi
+if [[ -n "$FORMAT" ]]; then
+    COMMON_ARGS_TYPE+=("--format" "$FORMAT")
+fi
+
+# Default to AI version for backward compatibility
+COMMON_ARGS=("${COMMON_ARGS_AI[@]}")
 
 # ============================================================================
 # Priority: Handle --ai option if specified
@@ -595,21 +625,21 @@ if [[ -n "$AI_NAME" ]]; then
             echo "" >&2
             echo "=== 5AI Review Results ===" >&2
             for i in "${!AI_NAMES[@]}"; do
-                local ai_name="${AI_NAMES[$i]}"
-                local status=$([ ${AI_RESULTS[$i]} -eq 0 ] && echo "✓ PASSED" || echo "✗ FAILED (exit ${AI_RESULTS[$i]})")
+                ai_name="${AI_NAMES[$i]}"
+                status=$([ ${AI_RESULTS[$i]} -eq 0 ] && echo "✓ PASSED" || echo "✗ FAILED (exit ${AI_RESULTS[$i]})")
                 printf "%-15s %s\n" "${ai_name^} Review:" "$status" >&2
             done
             echo "" >&2
 
             # Generate unified 5AI report
             echo "=== Generating Unified 5AI Reports ===" >&2
-            local unified_json="${OUTPUT_DIR}/unified-5ai-review.json"
-            local unified_html="${OUTPUT_DIR}/unified-5ai-review.html"
+            unified_json="${OUTPUT_DIR}/unified-5ai-review.json"
+            unified_html="${OUTPUT_DIR}/unified-5ai-review.html"
 
             # Merge JSON reports from all 5 AIs
-            local all_reports=()
+            all_reports=()
             for ai_name in "${AI_NAMES[@]}"; do
-                local json_file="${OUTPUT_DIR}/${ai_name}-review.json"
+                json_file="${OUTPUT_DIR}/${ai_name}-review.json"
                 [[ -f "$json_file" ]] && all_reports+=("$json_file")
             done
 
@@ -698,22 +728,22 @@ case "$TYPE" in
         declare -a RESULTS
 
         # Launch security review
-        execute_review "security" "${COMMON_ARGS[@]}" &
+        execute_review "security" "${COMMON_ARGS_TYPE[@]}" &
         PIDS[0]=$!
 
         # Launch quality review (with --fast if requested)
         if [[ "$FAST_MODE" == "true" ]]; then
-            execute_review "quality" "${COMMON_ARGS[@]}" --fast &
+            execute_review "quality" "${COMMON_ARGS_TYPE[@]}" --fast &
         else
-            execute_review "quality" "${COMMON_ARGS[@]}" &
+            execute_review "quality" "${COMMON_ARGS_TYPE[@]}" &
         fi
         PIDS[1]=$!
 
         # Launch enterprise review (with --compliance if requested)
         if [[ "$COMPLIANCE_MODE" == "true" ]]; then
-            execute_review "enterprise" "${COMMON_ARGS[@]}" --compliance &
+            execute_review "enterprise" "${COMMON_ARGS_TYPE[@]}" --compliance &
         else
-            execute_review "enterprise" "${COMMON_ARGS[@]}" &
+            execute_review "enterprise" "${COMMON_ARGS_TYPE[@]}" &
         fi
         PIDS[2]=$!
 
@@ -736,8 +766,8 @@ case "$TYPE" in
 
         # P2.1.3.2 & P2.1.3.3: Generate unified reports
         echo "=== Generating Unified Reports ===" >&2
-        local unified_json="${OUTPUT_DIR}/unified-review.json"
-        local unified_html="${OUTPUT_DIR}/unified-review.html"
+        unified_json="${OUTPUT_DIR}/unified-review.json"
+        unified_html="${OUTPUT_DIR}/unified-review.html"
 
         if merge_json_reports "$OUTPUT_DIR" "$unified_json"; then
             # Generate HTML report from unified JSON
@@ -763,22 +793,22 @@ case "$TYPE" in
         ;;
 
     security)
-        execute_review "security" "${COMMON_ARGS[@]}"
+        execute_review "security" "${COMMON_ARGS_TYPE[@]}"
         ;;
 
     quality)
         if [[ "$FAST_MODE" == "true" ]]; then
-            execute_review "quality" "${COMMON_ARGS[@]}" --fast
+            execute_review "quality" "${COMMON_ARGS_TYPE[@]}" --fast
         else
-            execute_review "quality" "${COMMON_ARGS[@]}"
+            execute_review "quality" "${COMMON_ARGS_TYPE[@]}"
         fi
         ;;
 
     enterprise)
         if [[ "$COMPLIANCE_MODE" == "true" ]]; then
-            execute_review "enterprise" "${COMMON_ARGS[@]}" --compliance
+            execute_review "enterprise" "${COMMON_ARGS_TYPE[@]}" --compliance
         else
-            execute_review "enterprise" "${COMMON_ARGS[@]}"
+            execute_review "enterprise" "${COMMON_ARGS_TYPE[@]}"
         fi
         ;;
 

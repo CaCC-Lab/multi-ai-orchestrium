@@ -157,11 +157,19 @@ done
 # Validation & Setup
 # ============================================================================
 
-# Sanitize and validate commit input
-COMMIT=$(sanitize_commit_input "$COMMIT")
-if [[ "$COMMIT" != "HEAD" ]]; then
-    validate_commit_hash "$COMMIT" || exit 1
+# Resolve commit reference first (handles HEAD, branches, tags, etc.)
+# Only if in a git repository
+if git rev-parse --git-dir > /dev/null 2>&1; then
+    COMMIT=$(git rev-parse "$COMMIT" 2>/dev/null)
+    if [[ $? -ne 0 ]]; then
+        echo "Error: Unable to resolve commit reference: $COMMIT" >&2
+        exit 1
+    fi
 fi
+
+# Sanitize and validate the resolved commit hash
+COMMIT=$(sanitize_commit_input "$COMMIT")
+validate_commit_hash "$COMMIT" || exit 1
 
 # Setup output directories
 if [[ -z "$OUTPUT_DIR" ]]; then
@@ -171,15 +179,8 @@ fi
 # Ensure output directory exists
 mkdir -p "$OUTPUT_DIR"
 
-# P1.3.3.4: Setup audit trail if enabled
-AUDIT_LOG=""
-if [[ "$AUDIT_TRAIL_ENABLED" == "true" ]]; then
-    AUDIT_LOG="$OUTPUT_DIR/audit-trail.log"
-    log_audit "Enterprise review started" "commit=$COMMIT" "compliance_mode=$COMPLIANCE_MODE"
-fi
-
 # ============================================================================
-# P1.3.3.4: Audit Trail Functions
+# P1.3.3.4: Audit Trail Functions (MOVED BEFORE USAGE)
 # ============================================================================
 
 log_audit() {
@@ -194,6 +195,13 @@ log_audit() {
     local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     echo "[$timestamp] $event | $metadata" >> "$AUDIT_LOG"
 }
+
+# P1.3.3.4: Setup audit trail if enabled
+AUDIT_LOG=""
+if [[ "$AUDIT_TRAIL_ENABLED" == "true" ]]; then
+    AUDIT_LOG="$OUTPUT_DIR/audit-trail.log"
+    log_audit "Enterprise review started" "commit=$COMMIT" "compliance_mode=$COMPLIANCE_MODE"
+fi
 
 # ============================================================================
 # P1.3.3.2: Primary AI Execution - Droid Enterprise Review
