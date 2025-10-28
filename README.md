@@ -161,45 +161,6 @@ AI特性別アダプター (Template Method Pattern)
 | `quality-focused` | 品質・テスト特化 | 600秒 |
 | `enterprise-focused` | エンタープライズ基準 | 900秒 |
 
-## 📖 詳細ドキュメント
-
-詳細な情報は以下のドキュメントを参照してください（`.archived/documentation/docs/`に保存されています）：
-
-### ユーザーガイド
-
-- **REVIEW_SYSTEM_GUIDE.md** - レビューシステム包括ガイド（1,024行）
-  - クイックスタート、全レビュータイプの詳細説明
-  - 統一インターフェース、自動ルーティング
-  - トラブルシューティング、CI/CD統合
-
-- **FIVE_AI_REVIEW_GUIDE.md** - 5AI個別レビューガイド（674行）
-  - Gemini、Qwen、Cursor、Amp、Droidの詳細
-  - フォーカスオプション、使用例、推奨シナリオ
-
-### 技術ドキュメント
-
-- **REVIEW_ARCHITECTURE.md** - アーキテクチャ仕様（1,024行）
-  - アーキテクチャ概要、共通ライブラリ
-  - Primary/Fallbackメカニズム、拡張ガイド
-
-- **ARCHITECTURE.md** - 全体アーキテクチャ（32KB）
-  - オーケストレーションシステム、TDDワークフロー
-  - 7AI協調パターン
-
-### プロジェクトドキュメント
-
-- **PROJECT_COMPLETION_SUMMARY.md** - プロジェクト完了サマリー
-  - Phase 1-3A完了詳細、テスト結果
-  - パフォーマンス指標、達成率
-
-- **OPTION_D++_IMPLEMENTATION_PLAN.md** - 実装計画（59KB）
-  - 7AI合意形成、Option D++設計
-  - フェーズ別実装詳細
-
-- **CONTRIBUTING.md** - 貢献ガイドライン（38KB）
-  - 開発環境セットアップ、コーディング規約
-  - テスト要件、PRワークフロー
-
 ## 🔧 トラブルシューティング
 
 ### 権限エラー
@@ -247,5 +208,3 @@ Copyright (c) 2025 Multi-AI Orchestrium Contributors
 **Version**: v3.0
 **Status**: ✅ Production Ready
 **Last Updated**: 2025-10-28
-
-**詳細なドキュメント**: `.archived/documentation/docs/` または [完全版README](.archived/README-FULL.md)
