@@ -216,23 +216,9 @@ ecommerce-app/
 snake-game/
 hello-world.py
 
-#
+# Documentation and tests (archived locally, not pushed to GitHub)
 docs/
 tests/
-
-# Exception: Keep Claude Review documentation
-!docs/API_REFERENCE_CLAUDE_REVIEW.md
-!docs/SECURITY_RULES_REFERENCE.md
-!docs/TESTING_GUIDE_CLAUDE_REVIEW.md
-!docs/USER_GUIDE_CLAUDE_REVIEW.md
-!docs/DEVELOPER_GUIDE_CLAUDE_REVIEW.md
-!docs/CLAUDE_REVIEW_SLASH_COMMANDS_IMPLEMENTATION_PLAN.md
-!docs/FIVE_AI_REVIEW_SCRIPTS_IMPLEMENTATION_PLAN.md
-!docs/FIVE_AI_REVIEW_GUIDE.md
-!docs/test-observations/
-!docs/test-observations/*
-!docs/reviews/
-!docs/reviews/*
 
 
 # ========== Keep These Files ==========
