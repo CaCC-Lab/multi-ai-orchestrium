@@ -521,7 +521,7 @@ EOF
             cat >> "$html_file" <<EOF
     </div>
     <div id="${review_type}" class="tab-content">
-        <h2>$(echo ${review_type} | sed 's/.*/\u&/') Review Results</h2>
+        <h2>${review_type^} Review Results</h2>
 EOF
             jq -r '.findings[] |
                 "<div class=\"finding P" + (.priority // 3 | tostring) + "\">" +

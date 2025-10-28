@@ -32,9 +32,18 @@ call_claude_review() {
     echo "$prompt" > "$temp_prompt_file"
 
     # Execute with stdin redirect (no pipe, no SIGPIPE risk)
+    # Capture stderr separately to avoid JSON extraction interference
     local raw_output
-    raw_output=$(timeout "${timeout}s" bash "$wrapper_script" --stdin < "$temp_prompt_file" 2>&1)
+    local stderr_output
+    local temp_stderr
+    temp_stderr=$(mktemp -t claude-review-stderr.XXXXXX)
+    chmod 600 "$temp_stderr"
+
+    raw_output=$(timeout "${timeout}s" bash "$wrapper_script" --stdin < "$temp_prompt_file" 2>"$temp_stderr")
     local exit_code=$?
+
+    stderr_output=$(cat "$temp_stderr")
+    rm -f "$temp_stderr"
 
     # Cleanup
     rm -f "$temp_prompt_file"
@@ -42,18 +51,33 @@ call_claude_review() {
 
     if [[ $exit_code -ne 0 ]]; then
         echo "Error: AI execution failed with code $exit_code" >&2
+        if [[ -n "$stderr_output" ]]; then
+            echo "Error output:" >&2
+            echo "$stderr_output" >&2
+        fi
         return $exit_code
     fi
 
     # Extract JSON from markdown code fence (\`\`\`json ... \`\`\`)
     # Use sed to extract lines between \`\`\`json and \`\`\` (excluding both markers)
+    # Made more flexible: allows whitespace, handles missing closing fence
     local json_output
-    json_output=$(echo "$raw_output" | sed -n '/^\`\`\`json$/,/^\`\`\`$/{/^\`\`\`/d;p;}')
+    json_output=$(echo "$raw_output" | sed -n '/^[[:space:]]*\`\`\`json[[:space:]]*$/,/^[[:space:]]*\`\`\`[[:space:]]*$/{/\`\`\`/d;p;}')
+
+    # If code fence extraction failed, try extracting raw JSON (fallback)
+    if [[ -z "$json_output" ]]; then
+        # Try to extract JSON object directly (from first { to last })
+        json_output=$(echo "$raw_output" | sed -n '/{/,/}/p' | sed '/^[[:space:]]*```/d')
+    fi
 
     if [[ -z "$json_output" ]]; then
         echo "Error: No JSON found in Claude output" >&2
         echo "Raw output (first 500 chars):" >&2
         echo "$raw_output" | head -c 500 >&2
+        if [[ -n "$stderr_output" ]]; then
+            echo "Stderr output:" >&2
+            echo "$stderr_output" | head -c 500 >&2
+        fi
         return 1
     fi
 

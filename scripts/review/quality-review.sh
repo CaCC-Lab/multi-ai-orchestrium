@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# quality-review.sh - Code quality-focused review using Qwen + Codex fallback
+# quality-review.sh - Code quality-focused review using Claude + Codex fallback
 # Version: 1.0.0
 # Purpose: Fast code quality review with refactoring suggestions
 # Reference: OPTION_D++_IMPLEMENTATION_PLAN.md Phase 1.3.2
@@ -35,7 +35,7 @@ source "$CLAUDE_ADAPTER"
 
 REVIEW_TYPE="quality"
 DEFAULT_COMMIT="HEAD"
-DEFAULT_TIMEOUT=600  # 10 minutes for Claude quality review (changed from 300s Qwen)
+DEFAULT_TIMEOUT=1200  # 20 minutes for Claude quality review (increased for parallel execution)
 FALLBACK_TIMEOUT=600  # 10 minutes for Codex review
 FAST_MODE_TIMEOUT=300  # 5 minutes for fast mode (increased from 120s for Claude)
 
@@ -246,7 +246,7 @@ execute_fallback_review() {
     # VibeLogger integration - fallback start
     vibe_review_start "$REVIEW_TYPE" "codex" "$commit"
 
-    echo "Primary AI (Qwen) failed or timed out. Falling back to Codex..." >&2
+    echo "Primary AI (Claude) failed or timed out. Falling back to Codex..." >&2
 
     # Check if codex-review.sh exists
     local codex_script="$PROJECT_ROOT/scripts/codex-review.sh"

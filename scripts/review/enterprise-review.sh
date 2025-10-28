@@ -35,7 +35,7 @@ source "$DROID_ADAPTER"
 
 REVIEW_TYPE="enterprise"
 DEFAULT_COMMIT="HEAD"
-DEFAULT_TIMEOUT=900  # 15 minutes for comprehensive Droid analysis
+DEFAULT_TIMEOUT=1200  # 20 minutes for comprehensive Droid analysis (increased for parallel execution)
 FALLBACK_TIMEOUT=600  # 10 minutes for Claude Comprehensive
 
 # Compliance mode configuration

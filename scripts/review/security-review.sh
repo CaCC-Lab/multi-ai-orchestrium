@@ -43,7 +43,7 @@ source "$CLAUDE_SECURITY_ADAPTER"
 
 REVIEW_TYPE="security"
 DEFAULT_COMMIT="HEAD"
-DEFAULT_TIMEOUT=600  # 10 minutes for Gemini (Web search overhead)
+DEFAULT_TIMEOUT=1200  # 20 minutes for Gemini (increased for parallel execution)
 FALLBACK_TIMEOUT=900  # 15 minutes for Claude Security
 
 # Output formats
