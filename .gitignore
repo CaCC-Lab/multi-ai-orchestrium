@@ -160,6 +160,8 @@ cursor-settings.json
 
 # CodeRabbit
 .coderabbit/
+.coderabbit-cache/
+.coderabbit_last_run
 coderabbit-cache/
 
 # ========== Test & Development ==========
@@ -189,6 +191,10 @@ results/
 backup/
 backups/
 *.backup
+*.backup-*
+
+# Archived files (demo projects, old versions, etc.)
+.archived/
 
 # Draft files
 draft/
