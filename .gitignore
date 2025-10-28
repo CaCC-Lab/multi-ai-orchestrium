@@ -206,6 +206,10 @@ PRIVATE.md
 NOTES.md
 TODO.private.md
 
+# Verification reports (internal use only)
+*_VERIFICATION_REPORT.md
+*_REPORT.md
+
 # Example/Demo projects (do not push)
 calculator/
 calculator-app/
