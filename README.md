@@ -135,7 +135,7 @@ Multi-AI Orchestriumは、13個のレビュースクリプトで構成される�
     ↓
 ┌────────────┬──────────────┬─────────────┐
 │セキュリティ│   品質       │エンタープライズ│
-│ (Gemini)   │  (Qwen)      │  (Droid)     │
+│ (Gemini)   │  (Claude)    │  (Droid)     │
 └────────────┴──────────────┴─────────────┘
     ↓
 AI特性別アダプター (Template Method Pattern)
@@ -148,7 +148,7 @@ AI特性別アダプター (Template Method Pattern)
 | タイプ | AI | 専門領域 | タイムアウト |
 |--------|-----|---------|------------|
 | Security | Gemini | OWASP Top 10、CVE検索 | 900秒 |
-| Quality | Qwen | コード品質、リファクタリング | 600秒 |
+| Quality | Claude | コード品質、リファクタリング | 600秒 |
 | Enterprise | Droid | エンタープライズ基準、コンプライアンス | 900秒 |
 
 ### レビュープロファイル
