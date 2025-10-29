@@ -29,6 +29,14 @@ if [[ ! -f "$DROID_ADAPTER" ]]; then
 fi
 source "$DROID_ADAPTER"
 
+# Load Claude adapter (fallback) - Use absolute path based on PROJECT_ROOT
+CLAUDE_ADAPTER="${PROJECT_ROOT}/scripts/review/lib/review-adapters/adapter-claude.sh"
+if [[ ! -f "$CLAUDE_ADAPTER" ]]; then
+    echo "Error: adapter-claude.sh not found at: $CLAUDE_ADAPTER" >&2
+    exit 1
+fi
+source "$CLAUDE_ADAPTER"
+
 # ============================================================================
 # Configuration
 # ============================================================================
@@ -416,21 +424,51 @@ execute_fallback_review() {
     echo "Primary AI (Droid) failed or timed out. Falling back to Claude Comprehensive..." >&2
     log_audit "Fallback review (Claude) started" "timeout=${timeout}s"
 
-    # Check if claude-review.sh exists
-    local claude_script="$PROJECT_ROOT/scripts/claude-review.sh"
-    if [[ ! -f "$claude_script" ]]; then
-        vibe_review_error "claude" "Claude review script not found at: $claude_script"
-        log_audit "ERROR: Claude script not found" "path=$claude_script"
+    # Get git diff (same as primary review)
+    local diff_content
+    diff_content=$(get_git_diff "$commit") || {
+        vibe_review_error "claude" "Failed to get git diff for commit: $commit"
+        log_audit "ERROR: Git diff failed" "commit=$commit"
         return 1
-    fi
+    }
 
-    # Execute Claude Comprehensive review script
+    # Load base review prompt
+    local base_prompt
+    base_prompt=$(load_review_prompt) || {
+        vibe_review_error "claude" "Failed to load REVIEW-PROMPT.md"
+        log_audit "ERROR: Review prompt loading failed"
+        return 1
+    }
+
+    # Construct full prompt with diff (comprehensive review)
+    local full_prompt
+    full_prompt=$(cat <<EOF
+$base_prompt
+
+# Code Diff to Review
+
+\`\`\`diff
+$diff_content
+\`\`\`
+
+# Comprehensive Quality Review
+
+Please perform a comprehensive code quality review focusing on:
+- Code correctness and logic errors
+- Best practices and design patterns
+- Performance considerations
+- Maintainability and readability
+- Test coverage adequacy
+EOF
+)
+
+    # Execute Claude review using adapter
     local exit_code=0
     local start_time=$(date +%s%3N)
 
-    # Note: Assuming claude-review.sh outputs JSON to stdout
+    # Use adapter-claude.sh instead of calling script directly
     local review_output
-    review_output=$(bash "$claude_script" --commit "$commit" --timeout "$timeout" 2>/dev/null) || exit_code=$?
+    review_output=$(call_claude_review "$full_prompt" "$timeout") || exit_code=$?
 
     local end_time=$(date +%s%3N)
     local duration_ms=$((end_time - start_time))
@@ -608,11 +646,12 @@ generate_html_audit_report() {
 EOF
 
     # Replace placeholders with actual data
-    sed -i "s/COMMIT_HASH/$COMMIT/g" "$output_file"
-    sed -i "s/REVIEWER_NAME/$(jq -r '.metadata.ai_reviewer // "unknown"' "$json_file")/g" "$output_file"
-    sed -i "s/REVIEW_DATE/$(date -u +"%Y-%m-%d %H:%M:%S UTC")/g" "$output_file"
-    sed -i "s/REVIEW_DURATION/$(jq -r '.metadata.review_duration_ms // 0' "$json_file" | awk '{printf "%.2fs", $1/1000}')/g" "$output_file"
-    sed -i "s/COMPLIANCE_STATUS/$(if [[ "$COMPLIANCE_MODE" == "true" ]]; then echo "Enabled ($COMPLIANCE_FRAMEWORKS)"; else echo "Disabled"; fi)/g" "$output_file"
+    # Use pipe (|) as delimiter to avoid conflicts with forward slashes in content
+    sed -i "s|COMMIT_HASH|$COMMIT|g" "$output_file"
+    sed -i "s|REVIEWER_NAME|$(jq -r '.metadata.ai_reviewer // "unknown"' "$json_file")|g" "$output_file"
+    sed -i "s|REVIEW_DATE|$(date -u +"%Y-%m-%d %H:%M:%S UTC")|g" "$output_file"
+    sed -i "s|REVIEW_DURATION|$(jq -r '.metadata.review_duration_ms // 0' "$json_file" | awk '{printf "%.2fs", $1/1000}')|g" "$output_file"
+    sed -i "s|COMPLIANCE_STATUS|$(if [[ "$COMPLIANCE_MODE" == "true" ]]; then echo "Enabled ($COMPLIANCE_FRAMEWORKS)"; else echo "Disabled"; fi)|g" "$output_file"
 
     local status=$(jq -r '.overall_correctness' "$json_file")
     local status_class=""
@@ -621,11 +660,13 @@ EOF
         "patch is incorrect") status_class="incorrect" ;;
         *) status_class="unsure" ;;
     esac
-    sed -i "s/STATUS_CLASS/$status_class/g" "$output_file"
-    sed -i "s/STATUS_TEXT/$status/g" "$output_file"
-    sed -i "s/CONFIDENCE_SCORE/$(jq -r '.overall_confidence_score // 0' "$json_file" | awk '{printf "%.0f%%", $1*100}')/g" "$output_file"
-    sed -i "s/OVERALL_EXPLANATION/$(jq -r '.overall_explanation // "N/A"' "$json_file" | sed 's/"/\\"/g')/g" "$output_file"
-    sed -i "s/FINDINGS_COUNT/$(jq '.findings | length' "$json_file")/g" "$output_file"
+    sed -i "s|STATUS_CLASS|$status_class|g" "$output_file"
+    sed -i "s|STATUS_TEXT|$status|g" "$output_file"
+    sed -i "s|CONFIDENCE_SCORE|$(jq -r '.overall_confidence_score // 0' "$json_file" | awk '{printf "%.0f%%", $1*100}')|g" "$output_file"
+    # Escape special sed characters in the explanation: &, \, and newlines
+    local explanation=$(jq -r '.overall_explanation // "N/A"' "$json_file" | sed 's/[&\]/\\&/g')
+    sed -i "s|OVERALL_EXPLANATION|$explanation|g" "$output_file"
+    sed -i "s|FINDINGS_COUNT|$(jq '.findings | length' "$json_file")|g" "$output_file"
 
     echo "HTML audit report generated: $output_file"
 }

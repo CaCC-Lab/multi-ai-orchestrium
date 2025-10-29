@@ -1,86 +1,159 @@
 #!/bin/bash
 # adapter-claude.sh - Claude Quality Review Adapter
-# Version: 1.0
-# Direct wrapper approach for quality-focused code review
+# Version: 2.0
+# Slash command + wrapper hybrid approach for quality-focused code review
 
 # Detect project root
 ADAPTER_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ADAPTER_PROJECT_ROOT="$(cd "$ADAPTER_SCRIPT_DIR/../../../.." && pwd)"
 
-# Call Claude via wrapper with JSON extraction
-# Usage: call_claude_review <prompt> <timeout>
+# Review mode control
+# USE_SLASH_COMMANDS=true: Use native Claude slash commands (claude /review)
+# USE_SLASH_COMMANDS=false: Use legacy wrapper approach
+USE_SLASH_COMMANDS="${USE_SLASH_COMMANDS:-true}"
+
+# Load Markdown parser library (for slash command mode)
+MARKDOWN_PARSER_AVAILABLE="false"
+MARKDOWN_PARSER_PATH="${ADAPTER_PROJECT_ROOT}/scripts/lib/markdown-parser.sh"
+if [[ -f "$MARKDOWN_PARSER_PATH" ]]; then
+    source "$MARKDOWN_PARSER_PATH"
+    MARKDOWN_PARSER_AVAILABLE="true"
+fi
+
+# Call Claude with hybrid slash/wrapper support
+# Usage: call_claude_review <prompt|diff_content> <timeout> [mode]
+# mode: "slash" or "wrapper" (default: from USE_SLASH_COMMANDS)
 call_claude_review() {
-    local prompt="$1"
+    local input_content="$1"
     local timeout="${2:-600}"
+    local mode="${3:-$USE_SLASH_COMMANDS}"
 
-    # Use claude MCP tool via wrapper
-    local wrapper_script="${ADAPTER_PROJECT_ROOT}/bin/claude-wrapper.sh"
-
-    if [[ ! -f "$wrapper_script" ]]; then
-        echo "Error: Claude wrapper not found: $wrapper_script" >&2
-        return 1
+    # Convert boolean to mode string
+    if [[ "$mode" == "true" ]]; then
+        mode="slash"
+    elif [[ "$mode" == "false" ]]; then
+        mode="wrapper"
     fi
 
-    # Execute Claude with timeout and extract JSON from markdown code fence
-    # SIGPIPE Fix: Use temp file instead of pipe to avoid Exit code 141
-    local temp_prompt_file
-    temp_prompt_file=$(mktemp -t claude-review-prompt.XXXXXX)
-    chmod 600 "$temp_prompt_file"
-    trap "rm -f '$temp_prompt_file'" EXIT INT TERM
+    local json_output=""
+    local exit_code=0
 
-    # Write prompt to temp file
-    echo "$prompt" > "$temp_prompt_file"
+    # Try slash command mode first (if enabled)
+    if [[ "$mode" == "slash" ]]; then
+        echo "Attempting Claude /review slash command..." >&2
 
-    # Execute with stdin redirect (no pipe, no SIGPIPE risk)
-    # Capture stderr separately to avoid JSON extraction interference
-    local raw_output
-    local stderr_output
-    local temp_stderr
-    temp_stderr=$(mktemp -t claude-review-stderr.XXXXXX)
-    chmod 600 "$temp_stderr"
+        # Create temporary markdown file
+        local temp_md_file
+        temp_md_file=$(mktemp -t claude-review-md.XXXXXX.md)
+        chmod 600 "$temp_md_file"
 
-    raw_output=$(timeout "${timeout}s" bash "$wrapper_script" --stdin < "$temp_prompt_file" 2>"$temp_stderr")
-    local exit_code=$?
+        # Execute claude /review slash command
+        # Input should be git diff content for slash mode
+        if echo "$input_content" | timeout "${timeout}s" claude /review > "$temp_md_file" 2>&1; then
+            echo "Slash command succeeded, converting Markdown to JSON..." >&2
 
-    stderr_output=$(cat "$temp_stderr")
-    rm -f "$temp_stderr"
+            # Convert Markdown to JSON using markdown-parser
+            if [[ "$MARKDOWN_PARSER_AVAILABLE" == "true" ]]; then
+                local temp_json_file
+                temp_json_file=$(mktemp -t claude-review-json.XXXXXX.json)
+                chmod 600 "$temp_json_file"
 
-    # Cleanup
-    rm -f "$temp_prompt_file"
-    trap - EXIT INT TERM
-
-    if [[ $exit_code -ne 0 ]]; then
-        echo "Error: AI execution failed with code $exit_code" >&2
-        if [[ -n "$stderr_output" ]]; then
-            echo "Error output:" >&2
-            echo "$stderr_output" >&2
+                if parse_markdown_review "$temp_md_file" "$temp_json_file"; then
+                    json_output=$(cat "$temp_json_file")
+                    rm -f "$temp_json_file"
+                    echo "Markdown → JSON conversion successful" >&2
+                else
+                    echo "Warning: Markdown → JSON conversion failed, falling back to wrapper" >&2
+                    exit_code=1
+                fi
+            else
+                echo "Warning: Markdown parser not available, falling back to wrapper" >&2
+                exit_code=1
+            fi
+        else
+            exit_code=$?
+            echo "Warning: Slash command failed (exit: $exit_code), falling back to wrapper" >&2
         fi
-        return $exit_code
+
+        rm -f "$temp_md_file"
     fi
 
-    # Extract JSON from markdown code fence (\`\`\`json ... \`\`\`)
-    # Use sed to extract lines between \`\`\`json and \`\`\` (excluding both markers)
-    # Made more flexible: allows whitespace, handles missing closing fence
-    local json_output
-    json_output=$(echo "$raw_output" | sed -n '/^[[:space:]]*\`\`\`json[[:space:]]*$/,/^[[:space:]]*\`\`\`[[:space:]]*$/{/\`\`\`/d;p;}')
+    # Fallback to wrapper mode if slash failed or disabled
+    if [[ -z "$json_output" || $exit_code -ne 0 ]]; then
+        echo "Using Claude wrapper mode (legacy)..." >&2
 
-    # If code fence extraction failed, try extracting raw JSON (fallback)
-    if [[ -z "$json_output" ]]; then
-        # Try to extract JSON object directly (from first { to last })
-        json_output=$(echo "$raw_output" | sed -n '/{/,/}/p' | sed '/^[[:space:]]*```/d')
-    fi
+        # Use claude MCP tool via wrapper
+        local wrapper_script="${ADAPTER_PROJECT_ROOT}/bin/claude-wrapper.sh"
 
-    if [[ -z "$json_output" ]]; then
-        echo "Error: No JSON found in Claude output" >&2
-        echo "Raw output (first 500 chars):" >&2
-        echo "$raw_output" | head -c 500 >&2
-        if [[ -n "$stderr_output" ]]; then
-            echo "Stderr output:" >&2
-            echo "$stderr_output" | head -c 500 >&2
+        if [[ ! -f "$wrapper_script" ]]; then
+            echo "Error: Claude wrapper not found: $wrapper_script" >&2
+            return 1
         fi
-        return 1
+
+        # Execute Claude with timeout and extract JSON from markdown code fence
+        # SIGPIPE Fix: Use temp file instead of pipe to avoid Exit code 141
+        local temp_prompt_file
+        temp_prompt_file=$(mktemp -t claude-review-prompt.XXXXXX)
+        chmod 600 "$temp_prompt_file"
+        trap "rm -f '$temp_prompt_file'" EXIT INT TERM
+
+        # Write prompt to temp file
+        # In wrapper mode, input_content should be the full prompt
+        echo "$input_content" > "$temp_prompt_file"
+
+        # Execute with stdin redirect (no pipe, no SIGPIPE risk)
+        # Capture stderr separately to avoid JSON extraction interference
+        local raw_output
+        local stderr_output
+        local temp_stderr
+        temp_stderr=$(mktemp -t claude-review-stderr.XXXXXX)
+        chmod 600 "$temp_stderr"
+
+        raw_output=$(timeout "${timeout}s" bash "$wrapper_script" --stdin --non-interactive < "$temp_prompt_file" 2>"$temp_stderr")
+        exit_code=$?
+
+        stderr_output=$(cat "$temp_stderr")
+        rm -f "$temp_stderr"
+
+        # Cleanup
+        rm -f "$temp_prompt_file"
+        trap - EXIT INT TERM
+
+        if [[ $exit_code -ne 0 ]]; then
+            echo "Error: AI execution failed with code $exit_code" >&2
+            if [[ -n "$stderr_output" ]]; then
+                echo "Error output:" >&2
+                echo "$stderr_output" >&2
+            fi
+            return $exit_code
+        fi
+
+        # Extract JSON from markdown code fence (\`\`\`json ... \`\`\`)
+        # Use sed to extract lines between \`\`\`json and \`\`\` (excluding both markers)
+        # Made more flexible: allows whitespace, handles missing closing fence
+        json_output=$(echo "$raw_output" | sed -n '/^[[:space:]]*\`\`\`json[[:space:]]*$/,/^[[:space:]]*\`\`\`[[:space:]]*$/{/\`\`\`/d;p;}')
+
+        # If code fence extraction failed, try extracting raw JSON (fallback)
+        if [[ -z "$json_output" ]]; then
+            # Try to extract JSON object directly (from first { to last })
+            json_output=$(echo "$raw_output" | sed -n '/{/,/}/p' | sed '/^[[:space:]]*```/d')
+        fi
+
+        if [[ -z "$json_output" ]]; then
+            echo "Error: No JSON found in Claude output" >&2
+            echo "Raw output (first 500 chars):" >&2
+            echo "$raw_output" | head -c 500 >&2
+            if [[ -n "$stderr_output" ]]; then
+                echo "Stderr output:" >&2
+                echo "$stderr_output" | head -c 500 >&2
+            fi
+            return 1
+        fi
+
+        echo "Wrapper mode succeeded" >&2
     fi
 
+    # Output JSON result
     echo "$json_output"
     return 0
 }
@@ -124,7 +197,7 @@ Provide output in the JSON format specified in the prompt above.
 EOF
 }
 
-# Execute quality review with Claude
+# Execute quality review with Claude (hybrid slash/wrapper mode)
 execute_claude_quality_review() {
     local commit="$1"
     local timeout="${2:-600}"
@@ -148,25 +221,33 @@ execute_claude_quality_review() {
         return 1
     fi
 
-    # Load base review prompt
-    local base_prompt
-    local prompt_file="${ADAPTER_PROJECT_ROOT}/REVIEW-PROMPT.md"
-    if [[ ! -f "$prompt_file" ]]; then
-        echo "Error: Review prompt not found: $prompt_file" >&2
-        return 1
-    fi
-    base_prompt=$(cat "$prompt_file")
+    # Prepare input content based on mode
+    local input_content
+    if [[ "$USE_SLASH_COMMANDS" == "true" ]]; then
+        # Slash mode: Pass raw diff content
+        # Claude /review will handle the review format internally
+        input_content="$diff_content"
+        echo "Using slash command mode: passing diff content directly" >&2
+    else
+        # Wrapper mode: Construct full prompt with quality focus
+        local base_prompt
+        local prompt_file="${ADAPTER_PROJECT_ROOT}/REVIEW-PROMPT.md"
+        if [[ ! -f "$prompt_file" ]]; then
+            echo "Error: Review prompt not found: $prompt_file" >&2
+            return 1
+        fi
+        base_prompt=$(cat "$prompt_file")
 
-    # Construct full prompt with diff and quality focus
-    local full_prompt
-    full_prompt=$(extend_prompt_for_quality "$base_prompt" "$diff_content")
+        input_content=$(extend_prompt_for_quality "$base_prompt" "$diff_content")
+        echo "Using wrapper mode: constructed full prompt" >&2
+    fi
 
     # Execute Claude review with timeout
     local review_output
     local exit_code=0
     local start_time=$(date +%s%3N)
 
-    review_output=$(call_claude_review "$full_prompt" "$timeout") || exit_code=$?
+    review_output=$(call_claude_review "$input_content" "$timeout") || exit_code=$?
 
     local end_time=$(date +%s%3N)
     local duration_ms=$((end_time - start_time))
@@ -175,6 +256,8 @@ execute_claude_quality_review() {
         echo "Error: Claude quality review failed with exit code: $exit_code" >&2
         return $exit_code
     fi
+
+    echo "Review completed in ${duration_ms}ms" >&2
 
     # Output the JSON result
     echo "$review_output"

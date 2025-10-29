@@ -19,7 +19,7 @@ mkdir -p "$VIBE_LOG_DIR"
 source "$SCRIPT_DIR/lib/sanitize.sh"
 source "$PROJECT_ROOT/bin/vibe-logger-lib.sh"
 
-GEMINI_REVIEW_TIMEOUT=${GEMINI_REVIEW_TIMEOUT:-600}  # Default: 10 minutes
+GEMINI_REVIEW_TIMEOUT=${GEMINI_REVIEW_TIMEOUT:-1800}  # Default: 30 minutes (increased for complex reviews)
 OUTPUT_DIR="${OUTPUT_DIR:-logs/gemini-reviews}"
 COMMIT_HASH="${COMMIT_HASH:-HEAD}"
 mkdir -p "$OUTPUT_DIR"
@@ -427,9 +427,17 @@ generate_fallback_json() {
     local output_file="$2"
 
     # Extract key security keywords
-    local vulnerability_count=$(echo "$text_output" | grep -icE "vulnerability|vuln" || echo "0")
-    local injection_count=$(echo "$text_output" | grep -icE "injection|sql|xss" || echo "0")
-    local auth_count=$(echo "$text_output" | grep -icE "authentication|auth|session" || echo "0")
+    local vulnerability_count
+    vulnerability_count=$(echo "$text_output" | grep -icE "vulnerability|vuln" 2>/dev/null) || true
+    vulnerability_count=${vulnerability_count:-0}
+
+    local injection_count
+    injection_count=$(echo "$text_output" | grep -icE "injection|sql|xss" 2>/dev/null) || true
+    injection_count=${injection_count:-0}
+
+    local auth_count
+    auth_count=$(echo "$text_output" | grep -icE "authentication|auth|session" 2>/dev/null) || true
+    auth_count=${auth_count:-0}
 
     cat > "$output_file" <<EOF
 {

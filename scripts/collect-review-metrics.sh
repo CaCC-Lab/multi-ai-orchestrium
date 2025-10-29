@@ -279,10 +279,10 @@ aggregate_metrics() {
        [[ -f /tmp/cost_metrics.json ]]; then
 
         jq -s '{
-            timestamp: (now | strftime("%Y-%m-%dT%H:%M:%SZ")),
-            execution_metrics: .[0],
-            quality_metrics: .[1],
-            cost_metrics: .[2]
+            "timestamp": (now | strftime("%Y-%m-%dT%H:%M:%SZ")),
+            "execution_metrics": .[0],
+            "quality_metrics": .[1],
+            "cost_metrics": .[2]
         }' /tmp/execution_metrics.json \
            /tmp/quality_metrics.json \
            /tmp/cost_metrics.json > "$METRICS_JSON"

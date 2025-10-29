@@ -13,10 +13,20 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # Load sanitization library
 source "$SCRIPT_DIR/lib/sanitize.sh"
+
+# Load Markdown parser library
+if [[ -f "$SCRIPT_DIR/lib/markdown-parser.sh" ]]; then
+    source "$SCRIPT_DIR/lib/markdown-parser.sh"
+    MARKDOWN_PARSER_AVAILABLE="true"
+else
+    MARKDOWN_PARSER_AVAILABLE="false"
+fi
+
 SECURITY_REVIEW_TIMEOUT=${SECURITY_REVIEW_TIMEOUT:-900}  # Default: 15 minutes
 OUTPUT_DIR="${OUTPUT_DIR:-logs/claude-security-reviews}"
 COMMIT_HASH="${COMMIT_HASH:-HEAD}"
 MIN_SEVERITY="${MIN_SEVERITY:-Low}"  # Critical/High/Medium/Low
+REVIEW_MODE="${REVIEW_MODE:-slash}"  # slash | wrapper
 
 # Vibe Logger Setup
 VIBE_LOG_DIR="$PROJECT_ROOT/logs/ai-coop/$(date +%Y%m%d)"
@@ -307,23 +317,268 @@ check_security_patterns() {
     echo "$total_vulnerabilities"
 }
 
+# Enrich JSON with security metadata (CWE, CVSS, OWASP)
+enrich_security_metadata() {
+    local md_file="$1"
+    local json_file="$2"
+
+    if [[ ! -f "$json_file" ]]; then
+        log_warning "JSON file not found for enrichment: $json_file"
+        return 1
+    fi
+
+    # Read markdown content for metadata extraction
+    local md_content
+    md_content=$(cat "$md_file")
+
+    # Process each finding and add security metadata
+    local findings_count
+    findings_count=$(jq -r '.findings | length' "$json_file")
+
+    for ((i=0; i<findings_count; i++)); do
+        local finding
+        finding=$(jq -r ".findings[$i]" "$json_file")
+        local title
+        title=$(echo "$finding" | jq -r '.title')
+        local body
+        body=$(echo "$finding" | jq -r '.body')
+
+        # Extract CWE
+        local cwe
+        cwe=$(extract_cwe "$title $body")
+
+        # Extract CVSS
+        local cvss
+        cvss=$(extract_cvss "$body")
+
+        # If no CVSS found, estimate from priority
+        if [[ -z "$cvss" ]] || [[ "$cvss" == "0.0" ]]; then
+            local priority
+            priority=$(echo "$finding" | jq -r '.priority')
+            case "$priority" in
+                0) cvss="9.5" ;;  # Critical
+                1) cvss="7.5" ;;  # High
+                2) cvss="5.5" ;;  # Medium
+                3) cvss="2.0" ;;  # Low
+                *) cvss="5.0" ;;
+            esac
+        fi
+
+        # Extract OWASP
+        local owasp
+        owasp=$(extract_owasp "$body")
+
+        # Update finding with security metadata
+        jq ".findings[$i] += {
+            \"security_metadata\": {
+                \"cwe_id\": $(if [[ -n "$cwe" ]]; then echo "\"CWE-$cwe\""; else echo "null"; fi),
+                \"cvss_score\": $(if [[ -n "$cvss" ]]; then echo "$cvss"; else echo "null"; fi),
+                \"owasp_category\": $(if [[ -n "$owasp" ]]; then echo "\"$owasp\""; else echo "null"; fi)
+            }
+        }" "$json_file" > "${json_file}.tmp" && mv "${json_file}.tmp" "$json_file"
+    done
+
+    return 0
+}
+
+# Generate SARIF format output from JSON
+generate_sarif_from_json() {
+    local json_file="$1"
+    local sarif_file="$2"
+    local commit_hash="$3"
+
+    if [[ ! -f "$json_file" ]]; then
+        log_warning "JSON file not found for SARIF generation: $json_file"
+        return 1
+    fi
+
+    # SARIF v2.1.0 schema
+    local sarif_json=$(jq -n \
+        --arg version "2.1.0" \
+        --arg schema "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json" \
+        --arg tool_name "claude-security-review" \
+        --arg tool_version "1.0.0" \
+        --arg commit "$commit_hash" \
+        '{
+            "version": $version,
+            "$schema": $schema,
+            "runs": [{
+                "tool": {
+                    "driver": {
+                        "name": $tool_name,
+                        "version": $tool_version,
+                        "informationUri": "https://github.com/anthropics/claude-code"
+                    }
+                },
+                "results": [],
+                "versionControlProvenance": [{
+                    "repositoryUri": ".",
+                    "revisionId": $commit
+                }]
+            }]
+        }')
+
+    # Process each finding and convert to SARIF result
+    local findings
+    findings=$(jq -r '.findings' "$json_file")
+    local findings_count
+    findings_count=$(echo "$findings" | jq 'length')
+
+    for ((i=0; i<findings_count; i++)); do
+        local finding
+        finding=$(echo "$findings" | jq ".[$i]")
+
+        local title
+        title=$(echo "$finding" | jq -r '.title')
+        local body
+        body=$(echo "$finding" | jq -r '.body')
+        local priority
+        priority=$(echo "$finding" | jq -r '.priority')
+        local confidence
+        confidence=$(echo "$finding" | jq -r '.confidence_score')
+        local file_path
+        file_path=$(echo "$finding" | jq -r '.code_location.absolute_file_path // empty')
+        local start_line
+        start_line=$(echo "$finding" | jq -r '.code_location.line_range.start // 1')
+        local end_line
+        end_line=$(echo "$finding" | jq -r '.code_location.line_range.end // 1')
+
+        # Map priority to SARIF level
+        local level
+        case "$priority" in
+            0) level="error" ;;    # Critical
+            1) level="error" ;;    # High
+            2) level="warning" ;;  # Medium
+            3) level="note" ;;     # Low
+            *) level="warning" ;;
+        esac
+
+        # Extract CWE from security_metadata if available
+        local cwe_id
+        cwe_id=$(echo "$finding" | jq -r '.security_metadata.cwe_id // empty')
+        local rule_id="security-review"
+        if [[ -n "$cwe_id" ]]; then
+            rule_id="$cwe_id"
+        fi
+
+        # Create SARIF result
+        local sarif_result=$(jq -n \
+            --arg ruleId "$rule_id" \
+            --arg level "$level" \
+            --arg title "$title" \
+            --arg body "$body" \
+            --arg file "$file_path" \
+            --argjson startLine "$start_line" \
+            --argjson endLine "$end_line" \
+            '{
+                "ruleId": $ruleId,
+                "level": $level,
+                "message": {
+                    "text": $title
+                },
+                "locations": (if $file != "" then [{
+                    "physicalLocation": {
+                        "artifactLocation": {
+                            "uri": $file
+                        },
+                        "region": {
+                            "startLine": $startLine,
+                            "endLine": $endLine
+                        }
+                    }
+                }] else [] end),
+                "properties": {
+                    "description": $body
+                }
+            }')
+
+        # Append result to SARIF runs[0].results
+        sarif_json=$(echo "$sarif_json" | jq ".runs[0].results += [$sarif_result]")
+    done
+
+    # Write SARIF to file
+    echo "$sarif_json" | jq '.' > "$sarif_file"
+
+    log_success "SARIF output generated: $sarif_file"
+    return 0
+}
+
 # Execute security review using Claude
 execute_claude_security_review() {
     local timestamp=$(date +%Y%m%d_%H%M%S)
     local commit_short=$(git rev-parse --short "$COMMIT_HASH")
-    local output_file="$OUTPUT_DIR/${timestamp}_${commit_short}_security.log"
+    local md_file="$OUTPUT_DIR/${timestamp}_${commit_short}_security.md"
+    local json_file="$OUTPUT_DIR/${timestamp}_${commit_short}_security.json"
+    local sarif_file="$OUTPUT_DIR/${timestamp}_${commit_short}_security.sarif"
     local status=0
     local start_time=$(get_timestamp_ms)
 
     # VibeLogger: security.start
     vibe_security_start "$COMMIT_HASH" "$SECURITY_REVIEW_TIMEOUT"
 
-    # Get the diff for the commit
-    local diff_content
-    diff_content=$(git show --no-color "$COMMIT_HASH" 2>/dev/null || echo "No diff available")
+    # Check review mode
+    if [[ "$REVIEW_MODE" == "slash" ]]; then
+        log_info "Using Claude /security-review slash command..."
 
-    # Create prompt for Claude
-    local security_prompt="Please perform a comprehensive security review of the following commit focusing on OWASP Top 10 and CWE vulnerabilities:
+        # Execute claude /security-review slash command directly
+        # Pipe git show output to claude /security-review
+        if git show --no-color "$COMMIT_HASH" | timeout "$SECURITY_REVIEW_TIMEOUT" claude /security-review > "$md_file" 2>&1; then
+            status=0
+            local end_time=$(get_timestamp_ms)
+            local execution_time=$((end_time - start_time))
+
+            # Convert Markdown to JSON using markdown-parser.sh
+            if [[ "$MARKDOWN_PARSER_AVAILABLE" == "true" ]]; then
+                log_info "Converting Markdown security review to JSON..."
+                if parse_markdown_review "$md_file" "$json_file"; then
+                    log_success "Markdown → JSON conversion successful"
+
+                    # Extract security metadata (CWE, CVSS, OWASP) from findings
+                    log_info "Extracting security metadata (CWE, CVSS, OWASP)..."
+                    enrich_security_metadata "$md_file" "$json_file"
+
+                    # Generate SARIF format for IDE integration
+                    log_info "Generating SARIF format output..."
+                    generate_sarif_from_json "$json_file" "$sarif_file" "$COMMIT_HASH"
+                else
+                    log_warning "Markdown → JSON conversion failed, Markdown output preserved"
+                    status=1
+                fi
+            else
+                log_warning "Markdown parser not available, JSON output skipped"
+                status=1
+            fi
+
+            # Count vulnerabilities
+            local vuln_count
+            if [[ -f "$json_file" ]]; then
+                vuln_count=$(jq -r '.findings | length' "$json_file" 2>/dev/null || echo "0")
+            else
+                vuln_count=$(grep -icE "(vulnerability|CWE-|CRITICAL|HIGH)" "$md_file" 2>/dev/null || echo "0")
+            fi
+
+            # VibeLogger: security.done (success)
+            vibe_security_done "success" "$vuln_count" "$execution_time"
+        else
+            local exit_code=$?
+            status=$exit_code
+            local end_time=$(get_timestamp_ms)
+            local execution_time=$((end_time - start_time))
+
+            log_error "Claude /security-review command failed (exit code: $exit_code)"
+            # VibeLogger: security.done (failed)
+            vibe_security_done "failed" "0" "$execution_time"
+        fi
+    else
+        # REVIEW_MODE=wrapper - Use old wrapper implementation
+        log_info "Using Claude wrapper (legacy mode)..."
+
+        # Get the diff for the commit
+        local diff_content
+        diff_content=$(git show --no-color "$COMMIT_HASH" 2>/dev/null || echo "No diff available")
+
+        # Create prompt for Claude
+        local security_prompt="Please perform a comprehensive security review of the following commit focusing on OWASP Top 10 and CWE vulnerabilities:
 
 Commit: $COMMIT_HASH ($(git show --format="%s" -s "$COMMIT_HASH" 2>/dev/null))
 Author: $(git show --format="%an <%ae>" -s "$COMMIT_HASH" 2>/dev/null)
@@ -352,37 +607,46 @@ For each vulnerability found, provide:
 - Remediation suggestions with code examples
 - CVSS v3.1 score if applicable"
 
-    # Security: Use mktemp for secure temporary file creation
-    local prompt_file
-    prompt_file=$(mktemp "${TMPDIR:-/tmp}/claude-security-prompt-XXXXXX.txt")
-    chmod 600 "$prompt_file"  # Ensure only owner can read/write
-    echo "$security_prompt" > "$prompt_file"
+        # Security: Use mktemp for secure temporary file creation
+        local prompt_file
+        prompt_file=$(mktemp "${TMPDIR:-/tmp}/claude-security-prompt-XXXXXX.txt")
+        chmod 600 "$prompt_file"  # Ensure only owner can read/write
+        echo "$security_prompt" > "$prompt_file"
 
-    if timeout "$SECURITY_REVIEW_TIMEOUT" bash -c 'claude /security-review' > "$output_file" 2>&1; then
-        status=0
-        local end_time=$(get_timestamp_ms)
-        local execution_time=$((end_time - start_time))
+        # Execute Claude wrapper with timeout
+        local raw_output_file="${json_file}.raw"
+        if timeout "$SECURITY_REVIEW_TIMEOUT" bash "$PROJECT_ROOT/bin/claude-wrapper.sh" --stdin --non-interactive < "$prompt_file" > "$raw_output_file" 2>&1; then
+            status=0
+            local end_time=$(get_timestamp_ms)
+            local execution_time=$((end_time - start_time))
 
-        # Count vulnerabilities
-        local vuln_count
-        vuln_count=$(grep -icE "(vulnerability|CWE-|CRITICAL|HIGH)" "$output_file" 2>/dev/null || echo "0")
+            # Save raw output as markdown
+            cp "$raw_output_file" "$md_file"
+            rm -f "$raw_output_file"
 
-        # VibeLogger: security.done (success)
-        vibe_security_done "success" "$vuln_count" "$execution_time"
-    else
-        local exit_code=$?
-        status=$exit_code
-        local end_time=$(get_timestamp_ms)
-        local execution_time=$((end_time - start_time))
+            # Count vulnerabilities
+            local vuln_count
+            vuln_count=$(grep -icE "(vulnerability|CWE-|CRITICAL|HIGH)" "$md_file" 2>/dev/null || echo "0")
 
-        # VibeLogger: security.done (failed)
-        vibe_security_done "failed" "0" "$execution_time"
+            # VibeLogger: security.done (success)
+            vibe_security_done "success" "$vuln_count" "$execution_time"
+        else
+            local exit_code=$?
+            status=$exit_code
+            local end_time=$(get_timestamp_ms)
+            local execution_time=$((end_time - start_time))
+
+            # VibeLogger: security.done (failed)
+            vibe_security_done "failed" "0" "$execution_time"
+        fi
+
+        # Clean up
+        [ -f "$prompt_file" ] && rm -f "$prompt_file"
     fi
 
-    # Clean up
-    [ -f "$prompt_file" ] && rm -f "$prompt_file"
-
-    echo "$output_file:$status"
+    # Return output file paths and status
+    # Format: md_file:json_file:sarif_file:status
+    echo "$md_file:$json_file:$sarif_file:$status"
 }
 
 # Execute pattern-based security review (fallback)
@@ -516,43 +780,77 @@ main() {
     setup_output_dir
 
     local result
+    local md_file
+    local json_file
+    local sarif_file
     local log_file
     local status
 
     if [[ "$USE_CLAUDE" == "true" ]]; then
         # Execute Claude security review
         result=$(execute_claude_security_review 2>/dev/null || echo "")
-        log_file="${result%%:*}"
-        status="${result##*:}"
 
-        if [ ! -f "$log_file" ] || [ ! -s "$log_file" ]; then
+        # Parse output format based on REVIEW_MODE
+        if [[ "$REVIEW_MODE" == "slash" ]]; then
+            # Format: md_file:json_file:sarif_file:status
+            md_file="${result%%:*}"
+            local temp="${result#*:}"
+            json_file="${temp%%:*}"
+            temp="${temp#*:}"
+            sarif_file="${temp%%:*}"
+            status="${temp##*:}"
+            log_file="$md_file"
+        else
+            # Format: md_file:status (wrapper mode, no json/sarif)
+            md_file="${result%%:*}"
+            status="${result##*:}"
+            log_file="$md_file"
+            json_file=""
+            sarif_file=""
+        fi
+
+        if [ ! -f "$md_file" ] || [ ! -s "$md_file" ]; then
             log_warning "Claude review failed, falling back to pattern-based scan"
             result=$(execute_pattern_security_review)
             log_file="${result%%:*}"
             status="${result##*:}"
+
+            # Generate reports for pattern-based scan
+            local reports
+            reports=$(generate_security_report "$log_file")
+            IFS=':' read -r json_file md_file sarif_file <<< "$reports"
         fi
     else
         # Execute pattern-based security review
         result=$(execute_pattern_security_review)
         log_file="${result%%:*}"
         status="${result##*:}"
+
+        # Generate reports
+        local reports
+        reports=$(generate_security_report "$log_file")
+        IFS=':' read -r json_file md_file sarif_file <<< "$reports"
     fi
 
-    # Generate reports
-    local reports
-    reports=$(generate_security_report "$log_file")
-    IFS=':' read -r json_file md_file sarif_file <<< "$reports"
-
-    create_symlinks "$json_file" "$md_file" "$sarif_file"
+    # Create symlinks to latest review
+    if [[ -n "$json_file" && -n "$md_file" && -n "$sarif_file" ]]; then
+        create_symlinks "$json_file" "$md_file" "$sarif_file"
+    fi
 
     echo ""
     log_success "Security review complete!"
     echo ""
     log_info "Results:"
-    echo "  - JSON: $json_file"
-    echo "  - Markdown: $md_file"
-    echo "  - SARIF: $sarif_file"
-    echo "  - Log: $log_file"
+    if [[ "$REVIEW_MODE" == "slash" && "$USE_CLAUDE" == "true" ]]; then
+        echo "  - Markdown: $md_file"
+        echo "  - JSON: $json_file"
+        echo "  - SARIF: $sarif_file"
+    else
+        echo "  - JSON: $json_file"
+        echo "  - Markdown: $md_file"
+        echo "  - SARIF: $sarif_file"
+        echo "  - Log: $log_file"
+    fi
 
     exit $status
 }

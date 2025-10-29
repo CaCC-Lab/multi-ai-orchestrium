@@ -257,6 +257,81 @@ check_prerequisites() {
     log_success "Prerequisites check passed"
 }
 
+# Fallback to Claude quality review (Phase 1.6)
+fallback_to_claude_review() {
+    local commit_hash="$1"
+    local diff_content="$2"
+    local output_json="$3"
+    local output_md="$4"
+    local review_guidelines="$5"
+
+    log_warning "Falling back to Claude for quality review"
+
+    # Create Claude-specific prompt
+    local claude_prompt="# Claude Quality-Focused Code Review (Fallback from Qwen)
+
+You are performing a code quality review as a fallback when Qwen failed.
+
+$review_guidelines
+
+## Commit Information
+- **Commit**: $commit_hash
+- **Short**: $(git rev-parse --short "$commit_hash")
+- **Subject**: $(git show --format=\"%s\" -s \"$commit_hash\" 2>/dev/null)
+
+## Changes
+\`\`\`diff
+$diff_content
+\`\`\`
+
+## Quality Analysis Focus
+Focus on code quality, patterns, and maintainability:
+1. Code readability & clarity
+2. Design patterns & best practices
+3. Performance optimization opportunities
+4. Technical debt & complexity
+
+Return JSON following REVIEW-PROMPT.md format."
+
+    # Execute Claude wrapper with extended timeout
+    export CLAUDE_MCP_TIMEOUT="${QWEN_REVIEW_TIMEOUT}"
+
+    local claude_output
+    local claude_prompt_file
+    claude_prompt_file=$(mktemp "${TMPDIR:-/tmp}/claude-fallback-XXXXXX.txt")
+    chmod 600 "$claude_prompt_file"
+    echo "$claude_prompt" > "$claude_prompt_file"
+
+    if claude_output=$(timeout "$QWEN_REVIEW_TIMEOUT" "$PROJECT_ROOT/bin/claude-wrapper.sh" --stdin < "$claude_prompt_file" 2>&1); then
+        # Clean and parse output
+        claude_output=$(echo "$claude_output" | sed '/^```json$/d; /^```$/d')
+
+        if echo "$claude_output" | jq empty 2>/dev/null; then
+            # Add metadata indicating fallback
+            claude_output=$(echo "$claude_output" | jq '. + {
+                "fallback_from": "Qwen",
+                "reviewer": "Claude (Fallback)",
+                "fallback_reason": "Qwen failed or returned invalid data"
+            }')
+
+            echo "$claude_output" > "$output_json"
+            generate_markdown_report "$claude_output" "$output_md"
+
+            rm -f "$claude_prompt_file"
+            log_success "Claude fallback review completed"
+            return 0
+        else
+            log_error "Claude fallback also returned non-JSON output"
+            rm -f "$claude_prompt_file"
+            return 1
+        fi
+    else
+        log_error "Claude fallback failed"
+        rm -f "$claude_prompt_file"
+        return 1
+    fi
+}
+
 # Execute Qwen quality review
 execute_qwen_review() {
     local timestamp=$(date +%Y%m%d_%H%M%S)
@@ -269,7 +344,21 @@ execute_qwen_review() {
 
     # Get the diff for the commit
     local diff_content
-    diff_content=$(git show --no-color "$COMMIT_HASH" 2>/dev/null || echo "No diff available")
+    diff_content=$(git show --no-color "$COMMIT_HASH" 2>/dev/null)
+
+    # VALIDATION: Ensure diff is not empty (Phase 1.3)
+    if [[ -z "$diff_content" || "$diff_content" == "No diff available" ]]; then
+        log_error "Git diff is empty for commit $COMMIT_HASH"
+        vibe_tool_done "qwen_quality_review" "failed" "0" "0"
+        return 1
+    fi
+
+    # VALIDATION: Extract actual file paths from diff to prevent dummy data
+    local actual_files
+    actual_files=$(echo "$diff_content" | grep '^diff --git' | sed 's/^diff --git a\///' | sed 's/ b\/.*//' | sort -u)
+    if [[ -z "$actual_files" ]]; then
+        log_warning "No file changes detected in diff"
+    fi
 
     # Read REVIEW-PROMPT.md
     local review_guidelines
@@ -381,6 +470,53 @@ Return findings in JSON format following REVIEW-PROMPT.md structure:
 
         # Parse JSON output
         if echo "$qwen_output" | jq empty 2>/dev/null; then
+            # VALIDATION: Check for dummy data (Phase 1.4)
+            local has_dummy_files
+            has_dummy_files=$(echo "$qwen_output" | jq -r '.findings[].code_location.absolute_file_path // "" | select(. != "")' | grep -E '(example\.js|test\.js|dummy\.js|fixture)' || echo "")
+
+            if [[ -n "$has_dummy_files" ]]; then
+                log_error "Qwen returned dummy/template data with non-existent files:"
+                echo "$has_dummy_files" | head -5 >&2
+
+                # Try Claude fallback (Phase 1.6)
+                if fallback_to_claude_review "$COMMIT_HASH" "$diff_content" "$output_json" "$output_md" "$review_guidelines"; then
+                    local findings_count
+                    findings_count=$(jq '.findings | length' "$output_json" 2>/dev/null || echo "0")
+                    vibe_tool_done "qwen_quality_review" "fallback_success" "$findings_count" "$execution_time"
+                    rm -f "$prompt_file"
+                    echo "$output_json:$output_md:0"
+                    return
+                else
+                    log_warning "Claude fallback failed, using dummy data placeholder"
+                    echo "$qwen_output" > "${output_json%.json}.txt"
+                    generate_fallback_json "$qwen_output" "$output_json"
+                    generate_markdown_report "$(cat "$output_json")" "$output_md"
+                    vibe_tool_done "qwen_quality_review" "failed" "0" "$execution_time"
+                    rm -f "$prompt_file"
+                    echo "$output_json:$output_md:1"
+                    return
+                fi
+            fi
+
+            # VALIDATION: Verify findings reference actual files from diff
+            if [[ -n "$actual_files" ]]; then
+                local invalid_files
+                invalid_files=$(echo "$qwen_output" | jq -r '.findings[].code_location.absolute_file_path // ""' | while read -r file; do
+                    if [[ -n "$file" ]]; then
+                        local basename_file
+                        basename_file=$(basename "$file")
+                        if ! echo "$actual_files" | grep -q "$basename_file"; then
+                            echo "$file"
+                        fi
+                    fi
+                done)
+
+                if [[ -n "$invalid_files" ]]; then
+                    log_warning "Qwen referenced files not in diff:"
+                    echo "$invalid_files" | head -3 >&2
+                fi
+            fi
+
             echo "$qwen_output" > "$output_json"
 
             # Count findings
@@ -415,10 +551,20 @@ Return findings in JSON format following REVIEW-PROMPT.md structure:
         local end_time=$(get_timestamp_ms)
         local execution_time=$((end_time - start_time))
 
-        vibe_tool_done "qwen_quality_review" "failed" "0" "$execution_time"
+        log_error "Qwen wrapper failed with exit code $exit_code"
 
-        rm -f "$prompt_file"
-        echo "::$exit_code"
+        # Try Claude fallback (Phase 1.6)
+        if fallback_to_claude_review "$COMMIT_HASH" "$diff_content" "$output_json" "$output_md" "$review_guidelines"; then
+            local findings_count
+            findings_count=$(jq '.findings | length' "$output_json" 2>/dev/null || echo "0")
+            vibe_tool_done "qwen_quality_review" "fallback_success" "$findings_count" "$execution_time"
+            rm -f "$prompt_file"
+            echo "$output_json:$output_md:0"
+        else
+            vibe_tool_done "qwen_quality_review" "failed" "0" "$execution_time"
+            rm -f "$prompt_file"
+            echo "::$exit_code"
+        fi
     fi
 }
 
@@ -428,9 +574,17 @@ generate_fallback_json() {
     local output_file="$2"
 
     # Extract key code quality keywords
-    local pattern_count=$(echo "$text_output" | grep -icE "pattern|design" || echo "0")
-    local complexity_count=$(echo "$text_output" | grep -icE "complexity|refactor" || echo "0")
-    local performance_count=$(echo "$text_output" | grep -icE "performance|optimi" || echo "0")
+    local pattern_count
+    pattern_count=$(echo "$text_output" | grep -icE "pattern|design" 2>/dev/null) || true
+    pattern_count=${pattern_count:-0}
+
+    local complexity_count
+    complexity_count=$(echo "$text_output" | grep -icE "complexity|refactor" 2>/dev/null) || true
+    complexity_count=${complexity_count:-0}
+
+    local performance_count
+    performance_count=$(echo "$text_output" | grep -icE "performance|optimi" 2>/dev/null) || true
+    performance_count=${performance_count:-0}
 
     cat > "$output_file" <<EOF
 {

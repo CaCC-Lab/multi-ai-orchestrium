@@ -442,9 +442,17 @@ generate_fallback_json() {
     local output_file="$2"
 
     # Extract key PM keywords
-    local doc_count=$(echo "$text_output" | grep -icE "documentation|readme|doc" || echo "0")
-    local comm_count=$(echo "$text_output" | grep -icE "communication|stakeholder" || echo "0")
-    local risk_count=$(echo "$text_output" | grep -icE "risk|concern" || echo "0")
+    local doc_count
+    doc_count=$(echo "$text_output" | grep -icE "documentation|readme|doc" 2>/dev/null) || true
+    doc_count=${doc_count:-0}
+
+    local comm_count
+    comm_count=$(echo "$text_output" | grep -icE "communication|stakeholder" 2>/dev/null) || true
+    comm_count=${comm_count:-0}
+
+    local risk_count
+    risk_count=$(echo "$text_output" | grep -icE "risk|concern" 2>/dev/null) || true
+    risk_count=${risk_count:-0}
 
     cat > "$output_file" <<EOF
 {

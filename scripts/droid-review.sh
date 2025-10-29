@@ -505,9 +505,17 @@ generate_fallback_json() {
     local output_file="$2"
 
     # Extract key enterprise keywords
-    local compliance_count=$(echo "$text_output" | grep -icE "compliance|gdpr|soc2|hipaa" || echo "0")
-    local scalability_count=$(echo "$text_output" | grep -icE "scalability|performance" || echo "0")
-    local reliability_count=$(echo "$text_output" | grep -icE "reliability|fault.tolerance" || echo "0")
+    local compliance_count
+    compliance_count=$(echo "$text_output" | grep -icE "compliance|gdpr|soc2|hipaa" 2>/dev/null) || true
+    compliance_count=${compliance_count:-0}
+
+    local scalability_count
+    scalability_count=$(echo "$text_output" | grep -icE "scalability|performance" 2>/dev/null) || true
+    scalability_count=${scalability_count:-0}
+
+    local reliability_count
+    reliability_count=$(echo "$text_output" | grep -icE "reliability|fault.tolerance" 2>/dev/null) || true
+    reliability_count=${reliability_count:-0}
 
     cat > "$output_file" <<EOF
 {

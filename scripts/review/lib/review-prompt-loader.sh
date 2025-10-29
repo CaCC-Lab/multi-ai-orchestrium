@@ -293,8 +293,8 @@ validate_review_output() {
         local finding
         finding=$(echo "$json_output" | jq ".findings[$i]")
 
-        # Check required finding fields
-        local finding_fields=("title" "body" "confidence_score" "code_location")
+        # Check required finding fields (code_location is optional per schema)
+        local finding_fields=("title" "body" "confidence_score")
         for field in "${finding_fields[@]}"; do
             if ! echo "$finding" | jq -e ".$field" > /dev/null 2>&1; then
                 echo "Error: Finding $i missing required field: $field" >&2
@@ -302,14 +302,18 @@ validate_review_output() {
             fi
         done
 
-        # Validate code_location structure
-        if ! echo "$finding" | jq -e '.code_location.absolute_file_path' > /dev/null 2>&1; then
-            echo "Error: Finding $i missing code_location.absolute_file_path" >&2
-            return 1
-        fi
-        if ! echo "$finding" | jq -e '.code_location.line_range' > /dev/null 2>&1; then
-            echo "Error: Finding $i missing code_location.line_range" >&2
-            return 1
+        # Validate code_location structure if present (code_location can be null)
+        local has_location
+        has_location=$(echo "$finding" | jq -r '.code_location')
+        if [[ "$has_location" != "null" ]]; then
+            if ! echo "$finding" | jq -e '.code_location.absolute_file_path' > /dev/null 2>&1; then
+                echo "Error: Finding $i has code_location but missing absolute_file_path" >&2
+                return 1
+            fi
+            if ! echo "$finding" | jq -e '.code_location.line_range' > /dev/null 2>&1; then
+                echo "Error: Finding $i has code_location but missing line_range" >&2
+                return 1
+            fi
         fi
     done
 

@@ -13,9 +13,19 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # Load sanitization library
 source "$SCRIPT_DIR/lib/sanitize.sh"
+
+# Load Markdown parser library
+if [[ -f "$SCRIPT_DIR/lib/markdown-parser.sh" ]]; then
+    source "$SCRIPT_DIR/lib/markdown-parser.sh"
+    MARKDOWN_PARSER_AVAILABLE="true"
+else
+    MARKDOWN_PARSER_AVAILABLE="false"
+fi
+
 CLAUDE_REVIEW_TIMEOUT=${CLAUDE_REVIEW_TIMEOUT:-600}  # Default: 10 minutes
 OUTPUT_DIR="${OUTPUT_DIR:-logs/claude-reviews}"
 COMMIT_HASH="${COMMIT_HASH:-HEAD}"
+REVIEW_MODE="${REVIEW_MODE:-slash}"  # slash | wrapper
 
 # Vibe Logger Setup
 VIBE_LOG_DIR="$PROJECT_ROOT/logs/ai-coop/$(date +%Y%m%d)"
@@ -254,69 +264,145 @@ setup_output_dir() {
 execute_claude_review() {
     local timestamp=$(date +%Y%m%d_%H%M%S)
     local commit_short=$(git rev-parse --short "$COMMIT_HASH")
-    local output_file="$OUTPUT_DIR/${timestamp}_${commit_short}_claude.log"
+    local md_file="$OUTPUT_DIR/${timestamp}_${commit_short}_claude.md"
+    local json_file="$OUTPUT_DIR/${timestamp}_${commit_short}_claude.json"
     local status=0
     local start_time=$(get_timestamp_ms)
 
     # VibeLogger: tool.start
     vibe_tool_start "claude_review" "$COMMIT_HASH" "$CLAUDE_REVIEW_TIMEOUT"
 
-    # Get the diff for the commit
-    local diff_content
-    diff_content=$(git show --no-color "$COMMIT_HASH" 2>/dev/null || echo "No diff available for commit $COMMIT_HASH")
+    # Check review mode
+    if [[ "$REVIEW_MODE" == "slash" ]]; then
+        log_info "Using Claude /review slash command..."
 
-    # Create prompt for Claude
-    local review_prompt="Please perform a comprehensive code review of the following commit:
+        # Execute claude /review slash command directly
+        # Pipe git show output to claude /review
+        if git show --no-color "$COMMIT_HASH" | timeout "$CLAUDE_REVIEW_TIMEOUT" claude /review > "$md_file" 2>&1; then
+            status=0
+            local end_time=$(get_timestamp_ms)
+            local execution_time=$((end_time - start_time))
 
-Commit: $COMMIT_HASH ($(git show --format="%s" -s "$COMMIT_HASH" 2>/dev/null))
-Author: $(git show --format="%an <%ae>" -s "$COMMIT_HASH" 2>/dev/null)
-Date: $(git show --format="%ad" -s "$COMMIT_HASH" 2>/dev/null)
+            # Convert Markdown to JSON using markdown-parser.sh
+            if [[ "$MARKDOWN_PARSER_AVAILABLE" == "true" ]]; then
+                log_info "Converting Markdown review to JSON..."
+                if parse_markdown_review "$md_file" "$json_file"; then
+                    log_success "Markdown → JSON conversion successful"
+                else
+                    log_warning "Markdown → JSON conversion failed, Markdown output preserved"
+                    status=1
+                fi
+            else
+                log_warning "Markdown parser not available, JSON output skipped"
+                status=1
+            fi
 
-Changes:
-$diff_content
+            # Count issues detected
+            local issues_found
+            if [[ -f "$json_file" ]]; then
+                issues_found=$(jq -r '.findings | length' "$json_file" 2>/dev/null || echo "0")
+            else
+                issues_found="0"
+            fi
 
-Please analyze:
-1. Code quality and best practices
-2. Potential bugs or issues
-3. Security vulnerabilities
-4. Performance implications
-5. Maintainability concerns
-6. Testing suggestions
+            # VibeLogger: tool.done (success)
+            vibe_tool_done "claude_review" "success" "$issues_found" "$execution_time"
+        else
+            local exit_code=$?
+            status=$exit_code
+            local end_time=$(get_timestamp_ms)
+            local execution_time=$((end_time - start_time))
 
-Provide specific, actionable feedback with line numbers where applicable."
-
-    # Execute Claude wrapper with timeout
-    # Security: Use mktemp for secure temporary file creation
-    local prompt_file
-    prompt_file=$(mktemp "${TMPDIR:-/tmp}/claude-review-prompt-XXXXXX.txt")
-    chmod 600 "$prompt_file"  # Ensure only owner can read/write
-    echo "$review_prompt" > "$prompt_file"
-
-    if timeout "$CLAUDE_REVIEW_TIMEOUT" bash -c 'claude /review' > "$output_file" 2>&1; then
-        status=0
-        local end_time=$(get_timestamp_ms)
-        local execution_time=$((end_time - start_time))
-
-        # Count issues detected
-        local issues_found
-        issues_found=$(grep -icE "(CRITICAL|WARNING|issue|problem|vulnerability)" "$output_file" 2>/dev/null || echo "0")
-
-        # VibeLogger: tool.done (success)
-        vibe_tool_done "claude_review" "success" "$issues_found" "$execution_time"
+            log_error "Claude /review command failed (exit code: $exit_code)"
+            # VibeLogger: tool.done (failed)
+            vibe_tool_done "claude_review" "failed" "0" "$execution_time"
+        fi
     else
-        local exit_code=$?
-        status=$exit_code
-        local end_time=$(get_timestamp_ms)
-        local execution_time=$((end_time - start_time))
+        # REVIEW_MODE=wrapper - Use old wrapper implementation
+        log_info "Using Claude wrapper (legacy mode)..."
 
-        # VibeLogger: tool.done (failed)
-        vibe_tool_done "claude_review" "failed" "0" "$execution_time"
+        # Get the diff for the commit
+        local diff_content
+        diff_content=$(git show --no-color "$COMMIT_HASH" 2>/dev/null || echo "No diff available for commit $COMMIT_HASH")
+
+        # Load REVIEW-PROMPT.md for JSON output
+        local base_prompt
+        local prompt_file_path="${PROJECT_ROOT}/REVIEW-PROMPT.md"
+        if [[ ! -f "$prompt_file_path" ]]; then
+            echo "Error: Review prompt not found: $prompt_file_path" >&2
+            return 1
+        fi
+        base_prompt=$(cat "$prompt_file_path")
+
+        # Create prompt for Claude with diff
+        local review_prompt="$base_prompt
+
+# Code Diff to Review
+
+\`\`\`diff
+$diff_content
+\`\`\`"
+
+        # Execute Claude wrapper with timeout
+        # Security: Use mktemp for secure temporary file creation
+        local prompt_file
+        prompt_file=$(mktemp "${TMPDIR:-/tmp}/claude-review-prompt-XXXXXX.txt")
+        chmod 600 "$prompt_file"  # Ensure only owner can read/write
+        echo "$review_prompt" > "$prompt_file"
+
+        # Execute and capture raw output
+        local raw_output_file="${json_file}.raw"
+        if timeout "$CLAUDE_REVIEW_TIMEOUT" bash "$PROJECT_ROOT/bin/claude-wrapper.sh" --stdin --non-interactive < "$prompt_file" > "$raw_output_file" 2>&1; then
+            status=0
+            local end_time=$(get_timestamp_ms)
+            local execution_time=$((end_time - start_time))
+
+            # Extract JSON from markdown code fence
+            local json_output
+            json_output=$(sed -n '/^[[:space:]]*```json[[:space:]]*$/,/^[[:space:]]*```[[:space:]]*$/{/```/d;p;}' "$raw_output_file")
+
+            # If code fence extraction failed, try extracting raw JSON (fallback)
+            if [[ -z "$json_output" ]]; then
+                json_output=$(sed -n '/{/,/}/p' "$raw_output_file" | sed '/^[[:space:]]*```/d')
+            fi
+
+            if [[ -z "$json_output" ]]; then
+                echo "Error: No JSON found in Claude output" >&2
+                echo "Raw output saved to: $raw_output_file" >&2
+                status=1
+            else
+                # Save extracted JSON
+                echo "$json_output" > "$json_file"
+                rm -f "$raw_output_file"
+            fi
+
+            # Count issues detected
+            local issues_found
+            issues_found=$(echo "$json_output" | jq -r '.findings | length' 2>/dev/null || echo "0")
+
+            # VibeLogger: tool.done (success)
+            vibe_tool_done "claude_review" "success" "$issues_found" "$execution_time"
+        else
+            local exit_code=$?
+            status=$exit_code
+            local end_time=$(get_timestamp_ms)
+            local execution_time=$((end_time - start_time))
+
+            # VibeLogger: tool.done (failed)
+            vibe_tool_done "claude_review" "failed" "0" "$execution_time"
+        fi
+
+        # Clean up
+        [ -f "$prompt_file" ] && rm -f "$prompt_file"
     fi
 
-    # Clean up
-    [ -f "$prompt_file" ] && rm -f "$prompt_file"
-
-    echo "$output_file:$status"
+    # Return output file path and status
+    # For slash mode: return md_file, for wrapper mode: return json_file
+    if [[ "$REVIEW_MODE" == "slash" ]]; then
+        echo "$md_file:$json_file:$status"
+    else
+        echo "$json_file::$status"
+    fi
 }
 
 # Execute Alternative review (when Claude is not available)
@@ -589,15 +675,29 @@ main() {
     if [[ "$USE_CLAUDE" == "true" ]]; then
         # Execute Claude review
         result=$(execute_claude_review 2>/dev/null || echo "")
-        log_file="${result%%:*}"
-        status="${result##*:}"
 
-        if [ -f "$log_file" ] && [ -s "$log_file" ]; then
-            parse_result=$(parse_claude_output "$log_file")
-            json_file="${parse_result%%:*}"
-            md_file="${parse_result##*:}"
+        # Parse result based on REVIEW_MODE
+        if [[ "$REVIEW_MODE" == "slash" ]]; then
+            # Format: md_file:json_file:status
+            md_file="${result%%:*}"
+            temp="${result#*:}"
+            json_file="${temp%%:*}"
+            status="${result##*:}"
+            log_file="$md_file"
+        else
+            # Format: json_file::status (wrapper mode)
+            json_file="${result%%:*}"
+            status="${result##*:}"
+            log_file="$json_file"
+            md_file=""
+        fi
+
+        if [ -f "$json_file" ] && [ -s "$json_file" ]; then
             review_type="claude"
             log_info "Claude review completed successfully"
+        elif [ -f "$md_file" ] && [ -s "$md_file" ]; then
+            review_type="claude"
+            log_info "Claude review completed (Markdown only)"
         else
             log_warning "Claude review failed or returned empty results, falling back to alternative implementation"
             result=$(execute_alternative_review)
@@ -625,7 +725,15 @@ main() {
         fi
     fi
 
-    create_symlinks "$json_file" "$md_file" "$review_type"
+    # Create symlinks if files exist
+    if [[ -f "$json_file" ]] && [[ -f "$md_file" ]]; then
+        ln -sf "$(basename "$json_file")" "$OUTPUT_DIR/latest_${review_type}.json"
+        ln -sf "$(basename "$md_file")" "$OUTPUT_DIR/latest_${review_type}.md"
+    elif [[ -f "$json_file" ]]; then
+        ln -sf "$(basename "$json_file")" "$OUTPUT_DIR/latest_${review_type}.json"
+    elif [[ -f "$md_file" ]]; then
+        ln -sf "$(basename "$md_file")" "$OUTPUT_DIR/latest_${review_type}.md"
+    fi
 
     echo ""
     if [[ "$review_type" == "claude" ]]; then
@@ -635,13 +743,13 @@ main() {
     fi
     echo ""
     log_info "Results:"
-    echo "  - JSON: $json_file"
-    echo "  - Markdown: $md_file"
-    echo "  - Log: $log_file"
+    [[ -f "$json_file" ]] && echo "  - JSON: $json_file"
+    [[ -f "$md_file" ]] && echo "  - Markdown: $md_file"
+    [[ -f "$log_file" ]] && [[ "$log_file" != "$json_file" ]] && [[ "$log_file" != "$md_file" ]] && echo "  - Log: $log_file"
 
     # VibeLogger: summary.done
-    local summary_text="Review complete for commit ${COMMIT_HASH:0:7}"
-    local output_files="[\"$json_file\", \"$md_file\", \"$log_file\"]"
+    local summary_text="Review complete for commit ${COMMIT_HASH:0:7} (mode: $REVIEW_MODE)"
+    local output_files="[\"$json_file\", \"$md_file\"]"
     vibe_summary_done "$summary_text" "high" "$output_files"
 
     exit $status

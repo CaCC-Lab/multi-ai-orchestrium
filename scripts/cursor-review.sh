@@ -441,9 +441,17 @@ generate_fallback_json() {
     local output_file="$2"
 
     # Extract key DX keywords
-    local readability_count=$(echo "$text_output" | grep -icE "readability|readable|clarity" || echo "0")
-    local navigation_count=$(echo "$text_output" | grep -icE "navigation|navigate|jump" || echo "0")
-    local refactor_count=$(echo "$text_output" | grep -icE "refactor|extract|inline" || echo "0")
+    local readability_count
+    readability_count=$(echo "$text_output" | grep -icE "readability|readable|clarity" 2>/dev/null) || true
+    readability_count=${readability_count:-0}
+
+    local navigation_count
+    navigation_count=$(echo "$text_output" | grep -icE "navigation|navigate|jump" 2>/dev/null) || true
+    navigation_count=${navigation_count:-0}
+
+    local refactor_count
+    refactor_count=$(echo "$text_output" | grep -icE "refactor|extract|inline" 2>/dev/null) || true
+    refactor_count=${refactor_count:-0}
 
     cat > "$output_file" <<EOF
 {
