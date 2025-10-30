@@ -39,12 +39,13 @@ profiles:
 
   # -------------------------------------------------------------------------
   # Quality-Focused Profile
-  # Primary: Qwen (Fast code quality + refactoring)
+  # Primary: Claude (Comprehensive quality + refactoring)
   # Fallback: Codex (Advanced complexity analysis)
+  # Note: Changed from Qwen to Claude for better reliability
   # -------------------------------------------------------------------------
   quality-focused:
     description: "High-speed code quality review with refactoring suggestions"
-    primary: qwen
+    primary: claude
     fallback: codex
     timeout: 300  # 5 minutes (fast review)
 

@@ -12,7 +12,7 @@ ChatDevとChain-of-Agentsを統合し、Claude、Gemini、Amp、Qwen、Droid、C
 
 - **YAML駆動設計**: スクリプト変更なしで役割分担を変更可能
 - **2つの協調パターン**: ChatDev（役割ベース）+ Chain-of-Agents（分割統治）
-- **13個のレビューシステム**: 5AI個別 + 3コア + 統合インターフェース + 自動ルーティング
+- **13個のレビューシステム**: 5AI個別 + 3コア + Claude専用2 + その他2 + 統一IF + 自動ルーティング
 - **Primary/Fallback機構**: 高可用性98%以上
 - **VibeLogger統合**: AI最適化された構造化ログ
 - **フォールトトレランス**: 一部AIが失敗しても処理継続
@@ -147,15 +147,15 @@ AI特性別アダプター (Template Method Pattern)
 
 | タイプ | AI | 専門領域 | タイムアウト |
 |--------|-----|---------|------------|
-| Security | Gemini | OWASP Top 10、CVE検索 | 600秒 |
-| Quality | Claude | コード品質、リファクタリング | 600秒 |
-| Enterprise | Droid | エンタープライズ基準、コンプライアンス | 900秒 |
+| Security | Gemini | OWASP Top 10、CVE検索 | 1200秒 |
+| Quality | Claude | コード品質、リファクタリング | 1200秒 |
+| Enterprise | Droid | エンタープライズ基準、コンプライアンス | 1200秒 |
 
 ### レビュープロファイル
 
 | プロファイル | 特徴 | タイムアウト |
 |-------------|------|------------|
-| `fast` | P0-P1のみ、高速 | 300秒 |
+| `fast` | P0-P1のみ、並列実行（Quality: 120秒 + Security: 300秒） | 最大300秒 |
 | `balanced` | 全レビュー統合 | 900秒 |
 | `security-focused` | セキュリティ特化 | 600秒 |
 | `quality-focused` | 品質・テスト特化 | 300秒 |
