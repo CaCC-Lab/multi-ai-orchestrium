@@ -443,15 +443,15 @@ generate_fallback_json() {
 
     # Extract key PM keywords
     local doc_count
-    doc_count=$(echo "$text_output" | grep -icE "documentation|readme|doc" 2>/dev/null) || true
+    doc_count=$(echo "$text_output" | grep -icE "documentation|readme|doc" 2>/dev/null | tr -d '\n\r' | head -1) || true
     doc_count=${doc_count:-0}
 
     local comm_count
-    comm_count=$(echo "$text_output" | grep -icE "communication|stakeholder" 2>/dev/null) || true
+    comm_count=$(echo "$text_output" | grep -icE "communication|stakeholder" 2>/dev/null | tr -d '\n\r' | head -1) || true
     comm_count=${comm_count:-0}
 
     local risk_count
-    risk_count=$(echo "$text_output" | grep -icE "risk|concern" 2>/dev/null) || true
+    risk_count=$(echo "$text_output" | grep -icE "risk|concern" 2>/dev/null | tr -d '\n\r' | head -1) || true
     risk_count=${risk_count:-0}
 
     cat > "$output_file" <<EOF

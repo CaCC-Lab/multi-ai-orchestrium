@@ -274,6 +274,41 @@ sanitize_file_path() {
     echo "$relative_path"
 }
 
+# Fix invalid JSON escape sequences (backslash-backtick)
+# Usage: fix_json_escape_sequences <json_file>
+# Returns: 0 if successful, 1 if error
+#
+# Problem: Claude /review slash command escapes backticks as \` in JSON strings,
+# but \` is not a valid JSON escape sequence. Only these are valid:
+# \", \\, \/, \b, \f, \n, \r, \t, \uXXXX
+#
+# This function fixes the issue by replacing \` with ` (unescaped)
+fix_json_escape_sequences() {
+    local json_file="$1"
+
+    if [[ ! -f "$json_file" ]]; then
+        echo "Error: JSON file not found: $json_file" >&2
+        return 1
+    fi
+
+    # Create temporary file
+    local temp_file
+    temp_file=$(mktemp)
+
+    # Replace \` with ` (backticks don't need escaping in JSON)
+    sed 's/\\`/`/g' "$json_file" > "$temp_file"
+
+    # Replace original file if sed succeeded
+    if [[ $? -eq 0 ]]; then
+        mv "$temp_file" "$json_file"
+        return 0
+    else
+        rm -f "$temp_file"
+        echo "Error: Failed to fix JSON escape sequences" >&2
+        return 1
+    fi
+}
+
 # P0.2.4.2: Convert JSON output to use relative paths
 # Usage: convert_json_to_relative_paths <json_file>
 # Returns: 0 if successful, 1 if error

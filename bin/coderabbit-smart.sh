@@ -192,6 +192,12 @@ run_coderabbit() {
     # ベースコミット設定
     if [[ -n "$base_commit" ]]; then
         args+=("--base-commit" "$base_commit")
+    else
+        # デフォルトブランチを自動検出（masterまたはmain）
+        local default_branch
+        default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || git branch --show-current)
+        [[ -z "$default_branch" ]] && default_branch="master"
+        args+=("--base" "$default_branch")
     fi
 
     # カスタム設定
@@ -203,14 +209,14 @@ run_coderabbit() {
         fi
     fi
 
-    log_info "CodeRabbit実行開始: $cmd ${args[*]}"
+    log_info "CodeRabbit実行開始: $cmd review ${args[*]}"
 
     # タイムスタンプ記録
     date +%s > "$RATE_LIMIT_FILE"
 
-    # 実行
+    # 実行 (review subcommand必須)
     local output_file="$LOG_DIR/coderabbit_output_$(date +%Y%m%d_%H%M%S).log"
-    if "$cmd" "${args[@]}" 2>&1 | tee "$output_file"; then
+    if "$cmd" review "${args[@]}" 2>&1 | tee "$output_file"; then
         log_info "CodeRabbit実行完了"
 
         # キャッシュ保存
@@ -265,7 +271,7 @@ EOF
 # メイン処理
 main() {
     local force=false
-    local mode="--plain"
+    local mode="--prompt-only"  # デフォルトはAI agent互換の--prompt-only
     local check_only=false
     local status_only=false
     local type="auto"

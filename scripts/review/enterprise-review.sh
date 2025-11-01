@@ -728,8 +728,15 @@ main() {
     # Parse output formats
     IFS=',' read -ra FORMATS <<< "$OUTPUT_FORMATS"
 
-    # P0.2.4.2: Convert JSON paths to relative before generating other formats
+    # P0.2.4.2: Fix JSON escape sequences and convert paths to relative before generating other formats
     if [[ -f "$final_output" ]]; then
+        echo "Fixing JSON escape sequences..." >&2
+        if fix_json_escape_sequences "$final_output"; then
+            echo "✓ JSON escape sequences fixed" >&2
+        else
+            echo "Warning: Could not fix all JSON escape sequences" >&2
+        fi
+
         echo "Converting file paths to relative..." >&2
         if convert_json_to_relative_paths "$final_output"; then
             echo "✓ File paths converted to relative" >&2

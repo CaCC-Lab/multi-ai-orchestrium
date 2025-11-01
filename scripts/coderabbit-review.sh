@@ -612,25 +612,31 @@ execute_coderabbit_review() {
     local smart_wrapper="$PROJECT_ROOT/bin/coderabbit-smart.sh"
 
     if [[ -x "$smart_wrapper" ]]; then
-        # Smart Wrapper実行（優先）+ --plain for non-interactive output
+        # Smart Wrapper実行（優先）+ --prompt-only for non-interactive output (AI agent compatible)
         if timeout "$CODERABBIT_REVIEW_TIMEOUT" \
-           "$smart_wrapper" --force --plain > "$output_file" 2>&1; then
+           "$smart_wrapper" --force --prompt-only > "$output_file" 2>&1; then
 
-            # 成功: メトリクス収集 + VibeLogger記録
-            status=0
-            local end_time=$(get_timestamp_ms)
-            local execution_time=$((end_time - start_time))
+            # 出力内容をチェック（exit code 0でも実際には失敗している場合がある）
+            if grep -q "No repository data available\|ERROR\|Failed to get file changes" "$output_file" 2>/dev/null; then
+                # 実際には失敗している
+                echo "⚠️  Smart Wrapper returned success but output shows error, trying Layer 2..." >&2
+            else
+                # 本当に成功: メトリクス収集 + VibeLogger記録
+                status=0
+                local end_time=$(get_timestamp_ms)
+                local execution_time=$((end_time - start_time))
 
-            # 問題数カウント（CodeRabbit出力パターン）
-            local issues_found
-            issues_found=$(grep -icE "(Critical|High|Medium|Low|Security|Performance)" "$output_file" 2>/dev/null || echo "0")
+                # 問題数カウント（CodeRabbit出力パターン）
+                local issues_found
+                issues_found=$(grep -icE "(Critical|High|Medium|Low|Security|Performance)" "$output_file" 2>/dev/null || echo "0")
 
-            # VibeLogger: tool.done (success)
-            vibe_tool_done "coderabbit_review" "success" "$issues_found" "$execution_time"
+                # VibeLogger: tool.done (success)
+                vibe_tool_done "coderabbit_review" "success" "$issues_found" "$execution_time"
 
-            # 戻り値出力（stdout汚染防止のため、ここだけecho許可）
-            echo "$output_file:$status"
-            return 0
+                # 戻り値出力（stdout汚染防止のため、ここだけecho許可）
+                echo "$output_file:$status"
+                return 0
+            fi
         else
             # Smart Wrapper失敗: Layer 2へフォールバック
             status=$?
@@ -659,22 +665,33 @@ execute_coderabbit_review() {
     fi
 
     if [[ -n "$cr_cmd" ]]; then
-        # Direct CLI実行 + --plain for non-interactive output
+        # Detect default branch (master or main)
+        local default_branch
+        default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || git branch --show-current)
+        [[ -z "$default_branch" ]] && default_branch="master"
+
+        # Direct CLI実行 + review subcommand + --prompt-only + --no-color + --base for non-interactive output (AI agent compatible)
         if timeout "$CODERABBIT_REVIEW_TIMEOUT" \
-           "$cr_cmd" --plain > "$output_file" 2>&1; then
+           "$cr_cmd" review --prompt-only --no-color --type all --base "$default_branch" --cwd "$PWD" > "$output_file" 2>&1; then
 
-            # 成功: メトリクス収集 + VibeLogger記録
-            status=0
-            local end_time=$(get_timestamp_ms)
-            local execution_time=$((end_time - start_time))
+            # 出力内容をチェック（exit code 0でも実際には失敗している場合がある）
+            if grep -q "No repository data available\|ERROR\|Failed to get file changes" "$output_file" 2>/dev/null; then
+                # 実際には失敗している
+                echo "⚠️  Direct CLI returned success but output shows error, using Layer 3..." >&2
+            else
+                # 本当に成功: メトリクス収集 + VibeLogger記録
+                status=0
+                local end_time=$(get_timestamp_ms)
+                local execution_time=$((end_time - start_time))
 
-            local issues_found
-            issues_found=$(grep -icE "(Critical|High|Medium|Low|Security|Performance)" "$output_file" 2>/dev/null || echo "0")
+                local issues_found
+                issues_found=$(grep -icE "(Critical|High|Medium|Low|Security|Performance)" "$output_file" 2>/dev/null || echo "0")
 
-            vibe_tool_done "coderabbit_review" "success" "$issues_found" "$execution_time"
+                vibe_tool_done "coderabbit_review" "success" "$issues_found" "$execution_time"
 
-            echo "$output_file:$status"
-            return 0
+                echo "$output_file:$status"
+                return 0
+            fi
         else
             # Direct CLI失敗: Layer 3へフォールバック
             status=$?
