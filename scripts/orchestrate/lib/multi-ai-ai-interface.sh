@@ -317,7 +317,7 @@ call_ai_with_context() {
             log_info "[$ai_name] Using wrapper with file input"
 
             ( # Start a subshell to scope the environment variable
-                export WRAPPER_NON_INTERACTIVE="${WRAPPER_NON_INTERACTIVE:-}"
+                export WRAPPER_NON_INTERACTIVE="${WRAPPER_NON_INTERACTIVE:-1}"
 
                 if supports_file_input "$ai_name"; then
                     # Use --prompt-file if supported
@@ -376,7 +376,7 @@ call_ai_with_context() {
         if [ -f "$wrapper_script" ]; then
             # Set WRAPPER_SKIP_TIMEOUT=1 to let outer timeout manage execution
             ( # Start a subshell to scope the environment variable
-                export WRAPPER_NON_INTERACTIVE="${WRAPPER_NON_INTERACTIVE:-}"
+                export WRAPPER_NON_INTERACTIVE="${WRAPPER_NON_INTERACTIVE:-1}"
                 if [ -n "$output_file" ]; then
                     WRAPPER_SKIP_TIMEOUT=1 timeout "$timeout" "$wrapper_script" --prompt "$context" > "$output_file" 2>&1
                 else
