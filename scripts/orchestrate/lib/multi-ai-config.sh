@@ -523,7 +523,7 @@ AI: $ai
 Please complete this task according to your role."
 
     log_info "[$ai] Executing role: $role (timeout: ${timeout}s)"
-    WRAPPER_NON_INTERACTIVE=1 call_ai "$ai" "$prompt" "$timeout" "$output_file"
+    call_ai "$ai" "$prompt" "$timeout" "$output_file"
     return $?
 }
 
@@ -597,8 +597,8 @@ Please complete this task according to your role."
         # P0.3.2.1: Wait for job slot before launching (resource limiting)
         wait_for_slot
 
-        # Launch in background with non-interactive mode
-        WRAPPER_NON_INTERACTIVE=1 call_ai "$ai" "$prompt" "$timeout" "$output_file" &
+        # Launch in background
+        call_ai "$ai" "$prompt" "$timeout" "$output_file" &
         local pid=$!
         pids+=($pid)
         ai_names+=("$ai")
