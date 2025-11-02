@@ -44,7 +44,7 @@ source "$WORKFLOWS_LIB_DIR/workflows-review.sh"
 # Quad Review Workflow (1 function)
 source "$WORKFLOWS_LIB_DIR/workflows-review-quad.sh"
 
-# Export all workflow functions (14 total)
+# Export all workflow functions (16 total)
 # Core Workflows
 export -f multi-ai-full-orchestrate
 export -f multi-ai-speed-prototype
@@ -52,6 +52,8 @@ export -f multi-ai-enterprise-quality
 export -f multi-ai-hybrid-development
 export -f multi-ai-consensus-review
 export -f multi-ai-chatdev-develop
+export -f multi-ai-collaborative-planning
+export -f multi-ai-collaborative-testing
 
 # Discussion Workflows
 export -f multi-ai-discuss-before

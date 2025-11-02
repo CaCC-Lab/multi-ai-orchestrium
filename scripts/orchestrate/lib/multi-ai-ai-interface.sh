@@ -316,26 +316,31 @@ call_ai_with_context() {
         if [ -f "$wrapper_script" ]; then
             log_info "[$ai_name] Using wrapper with file input"
 
-            if supports_file_input "$ai_name"; then
-                # Use --prompt-file if supported
-                if [ -n "$output_file" ]; then
-                    timeout "$timeout" "$wrapper_script" --prompt-file "$prompt_file" > "$output_file" 2>&1
-                    exit_code=$?
+            ( # Start a subshell to scope the environment variable
+                export WRAPPER_NON_INTERACTIVE="${WRAPPER_NON_INTERACTIVE:-}"
+
+                if supports_file_input "$ai_name"; then
+                    # Use --prompt-file if supported
+                    if [ -n "$output_file" ]; then
+                        timeout "$timeout" "$wrapper_script" --prompt-file "$prompt_file" > "$output_file" 2>&1
+                        exit_code=$?
+                    else
+                        timeout "$timeout" "$wrapper_script" --prompt-file "$prompt_file" 2>&1
+                        exit_code=$?
+                    fi
                 else
-                    timeout "$timeout" "$wrapper_script" --prompt-file "$prompt_file" 2>&1
-                    exit_code=$?
+                    # Fallback to stdin redirect with --stdin flag for explicit handling
+                    # Set WRAPPER_SKIP_TIMEOUT=1 to let outer timeout manage execution
+                    if [ -n "$output_file" ]; then
+                        WRAPPER_SKIP_TIMEOUT=1 timeout "$timeout" "$wrapper_script" --stdin < "$prompt_file" > "$output_file" 2>&1
+                        exit_code=$?
+                    else
+                        WRAPPER_SKIP_TIMEOUT=1 timeout "$timeout" "$wrapper_script" --stdin < "$prompt_file" 2>&1
+                        exit_code=$?
+                    fi
                 fi
-            else
-                # Fallback to stdin redirect with --stdin flag for explicit handling
-                # Set WRAPPER_SKIP_TIMEOUT=1 to let outer timeout manage execution
-                if [ -n "$output_file" ]; then
-                    WRAPPER_SKIP_TIMEOUT=1 timeout "$timeout" "$wrapper_script" --stdin < "$prompt_file" > "$output_file" 2>&1
-                    exit_code=$?
-                else
-                    WRAPPER_SKIP_TIMEOUT=1 timeout "$timeout" "$wrapper_script" --stdin < "$prompt_file" 2>&1
-                    exit_code=$?
-                fi
-            fi
+            )
+            exit_code=$? # Capture the exit code from the subshell
         else
             log_warning "[$ai_name] Wrapper not found, using direct CLI with stdin"
             if [ -n "$output_file" ]; then
@@ -370,11 +375,14 @@ call_ai_with_context() {
 
         if [ -f "$wrapper_script" ]; then
             # Set WRAPPER_SKIP_TIMEOUT=1 to let outer timeout manage execution
-            if [ -n "$output_file" ]; then
-                WRAPPER_SKIP_TIMEOUT=1 timeout "$timeout" "$wrapper_script" --prompt "$context" > "$output_file" 2>&1
-            else
-                WRAPPER_SKIP_TIMEOUT=1 timeout "$timeout" "$wrapper_script" --prompt "$context" 2>&1
-            fi
+            ( # Start a subshell to scope the environment variable
+                export WRAPPER_NON_INTERACTIVE="${WRAPPER_NON_INTERACTIVE:-}"
+                if [ -n "$output_file" ]; then
+                    WRAPPER_SKIP_TIMEOUT=1 timeout "$timeout" "$wrapper_script" --prompt "$context" > "$output_file" 2>&1
+                else
+                    WRAPPER_SKIP_TIMEOUT=1 timeout "$timeout" "$wrapper_script" --prompt "$context" 2>&1
+                fi
+            )
             return $?
         else
             # Fallback to direct CLI

@@ -206,8 +206,9 @@ wrapper_apply_timeout() {
   # Timeout strategy: Use outer timeout when called from workflow, inner timeout for standalone
   if [[ "${WRAPPER_SKIP_TIMEOUT:-}" == "1" ]]; then
     # Called from workflow (multi-ai-ai-interface.sh) - outer timeout manages execution
-    # Use exec to replace wrapper process with AI command so timeout works correctly
-    exec "${command[@]}"
+    # Don't use exec when stdin is piped (breaks stdin connection)
+    "${command[@]}"
+    exit $?
   else
     # Standalone execution - use wrapper-defined timeout from AGENTS.md classification
     if command -v timeout >/dev/null 2>&1; then
@@ -216,9 +217,11 @@ wrapper_apply_timeout() {
       if command -v to_seconds >/dev/null 2>&1; then
         timeout_arg="$(to_seconds "$timeout_value")"
       fi
-      exec timeout "$timeout_arg" "${command[@]}"
+      timeout "$timeout_arg" "${command[@]}"
+      exit $?
     else
-      exec "${command[@]}"
+      "${command[@]}"
+      exit $?
     fi
   fi
 }
@@ -284,7 +287,8 @@ wrapper_run_ai() {
   fi
 
   # Apply timeout and execute AI command
-  wrapper_apply_timeout "$final_timeout" "${ai_command[@]}" "$prompt"
+  # Pass prompt via stdin to handle large prompts (>ARG_MAX) and special characters safely
+  printf '%s' "$prompt" | wrapper_apply_timeout "$final_timeout" "${ai_command[@]}"
 }
 
 # ============================================================================

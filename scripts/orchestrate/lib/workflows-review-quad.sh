@@ -19,6 +19,101 @@
 set -euo pipefail
 
 # ============================================================================
+# Helper Functions for Phase 2 (6AI Collaborative Analysis)
+# ============================================================================
+
+# Gemini: セキュリティ検証
+_quad_review_gemini() {
+    local quad_context="$1"
+    local output_file="$2"
+
+    # Source required libraries
+    source "$(dirname "${BASH_SOURCE[0]}")/multi-ai-core.sh"
+    source "$(dirname "${BASH_SOURCE[0]}")/multi-ai-ai-interface.sh"
+
+    local result
+    # Non-interactive mode for automated workflow (bypass approval prompts)
+    WRAPPER_NON_INTERACTIVE=1 result=$(call_ai_with_context "gemini" "セキュリティ観点からレビュー結果を検証:
+$quad_context" 600)
+    echo "$result" > "$output_file"
+}
+
+# Amp: メンテナンス性評価
+_quad_review_amp() {
+    local quad_context="$1"
+    local output_file="$2"
+
+    source "$(dirname "${BASH_SOURCE[0]}")/multi-ai-core.sh"
+    source "$(dirname "${BASH_SOURCE[0]}")/multi-ai-ai-interface.sh"
+
+    local result
+    # Non-interactive mode for automated workflow (bypass approval prompts)
+    WRAPPER_NON_INTERACTIVE=1 result=$(call_ai_with_context "amp" "メンテナンス性の観点からレビュー結果を評価:
+$quad_context" 600)
+    echo "$result" > "$output_file"
+}
+
+# Qwen: 代替実装提案
+_quad_review_qwen() {
+    local quad_context="$1"
+    local output_file="$2"
+
+    source "$(dirname "${BASH_SOURCE[0]}")/multi-ai-core.sh"
+    source "$(dirname "${BASH_SOURCE[0]}")/multi-ai-ai-interface.sh"
+
+    local result
+    # Non-interactive mode for automated workflow (bypass approval prompts)
+    WRAPPER_NON_INTERACTIVE=1 result=$(call_ai_with_context "qwen" "指摘された問題の代替実装を提案:
+$quad_context" 600)
+    echo "$result" > "$output_file"
+}
+
+# Droid: エンタープライズ基準評価
+_quad_review_droid() {
+    local quad_context="$1"
+    local output_file="$2"
+
+    source "$(dirname "${BASH_SOURCE[0]}")/multi-ai-core.sh"
+    source "$(dirname "${BASH_SOURCE[0]}")/multi-ai-ai-interface.sh"
+
+    local result
+    # Non-interactive mode for automated workflow (bypass approval prompts)
+    WRAPPER_NON_INTERACTIVE=1 result=$(call_ai_with_context "droid" "エンタープライズ基準の観点から評価:
+$quad_context" 900)
+    echo "$result" > "$output_file"
+}
+
+# Codex: 最適化提案
+_quad_review_codex() {
+    local quad_context="$1"
+    local output_file="$2"
+
+    source "$(dirname "${BASH_SOURCE[0]}")/multi-ai-core.sh"
+    source "$(dirname "${BASH_SOURCE[0]}")/multi-ai-ai-interface.sh"
+
+    local result
+    # Non-interactive mode for automated workflow (bypass approval prompts)
+    WRAPPER_NON_INTERACTIVE=1 result=$(call_ai_with_context "codex" "4つのレビュー結果を分析し、最適化提案を提供:
+$quad_context" 600)
+    echo "$result" > "$output_file"
+}
+
+# Cursor: 開発者体験評価
+_quad_review_cursor() {
+    local quad_context="$1"
+    local output_file="$2"
+
+    source "$(dirname "${BASH_SOURCE[0]}")/multi-ai-core.sh"
+    source "$(dirname "${BASH_SOURCE[0]}")/multi-ai-ai-interface.sh"
+
+    local result
+    # Non-interactive mode for automated workflow (bypass approval prompts)
+    WRAPPER_NON_INTERACTIVE=1 result=$(call_ai_with_context "cursor" "開発者体験の観点からレビュー結果を評価:
+$quad_context" 600)
+    echo "$result" > "$output_file"
+}
+
+# ============================================================================
 # Quad Review Functions (1 function)
 # ============================================================================
 
@@ -149,7 +244,7 @@ multi-ai-quad-review() {
     local codex_results coderabbit_results claude_comp_results claude_sec_results
 
     # Codex results
-    local codex_md=$(find "$codex_dir" -name "*.md" -type f | sort | tail -1)
+    local codex_md=$(find "$codex_dir" -name "*.md" -type f ! -name "latest_*" | sort | tail -1)
     if [ -f "$codex_md" ]; then
         codex_results=$(cat "$codex_md")
     else
@@ -157,7 +252,7 @@ multi-ai-quad-review() {
     fi
 
     # CodeRabbit results
-    local coderabbit_md=$(find "$coderabbit_dir" -name "*.md" -type f | sort | tail -1)
+    local coderabbit_md=$(find "$coderabbit_dir" -name "*.md" -type f ! -name "latest_*" | sort | tail -1)
     if [ -f "$coderabbit_md" ]; then
         coderabbit_results=$(cat "$coderabbit_md")
     else
@@ -165,7 +260,7 @@ multi-ai-quad-review() {
     fi
 
     # Claude comprehensive results
-    local claude_comp_md=$(find "$claude_comp_dir" -name "*_claude.md" -type f | sort | tail -1)
+    local claude_comp_md=$(find "$claude_comp_dir" -name "*_claude.md" -type f ! -name "latest_*" | sort | tail -1)
     if [ -f "$claude_comp_md" ]; then
         claude_comp_results=$(cat "$claude_comp_md")
     else
@@ -173,7 +268,7 @@ multi-ai-quad-review() {
     fi
 
     # Claude security results
-    local claude_sec_md=$(find "$claude_sec_dir" -name "*_claude_security.md" -type f | sort | tail -1)
+    local claude_sec_md=$(find "$claude_sec_dir" -name "*_security.md" -type f ! -name "latest_*" | sort | tail -1)
     if [ -f "$claude_sec_md" ]; then
         claude_sec_results=$(cat "$claude_sec_md")
     else
@@ -209,55 +304,30 @@ $claude_sec_results
     # Launch 6 AIs in parallel for collaborative analysis
     log_info "Launching 6 AIs for collaborative analysis..."
 
-    local gemini_result amp_result qwen_result droid_result codex_analysis_result cursor_result
     local gemini_pid amp_pid qwen_pid droid_pid codex_analysis_pid cursor_pid
 
     # Gemini: セキュリティ検証
-    (
-        gemini_result=$(call_ai_with_context "gemini" "セキュリティ観点からレビュー結果を検証:
-$quad_context" 600)
-        echo "$gemini_result" > "$OUTPUT_DIR/gemini_security_validation.txt"
-    ) &
+    _quad_review_gemini "$quad_context" "$OUTPUT_DIR/gemini_security_validation.txt" &
     gemini_pid=$!
 
     # Amp: メンテナンス性評価
-    (
-        amp_result=$(call_ai_with_context "amp" "メンテナンス性の観点からレビュー結果を評価:
-$quad_context" 600)
-        echo "$amp_result" > "$OUTPUT_DIR/amp_maintainability.txt"
-    ) &
+    _quad_review_amp "$quad_context" "$OUTPUT_DIR/amp_maintainability.txt" &
     amp_pid=$!
 
     # Qwen: 代替実装提案
-    (
-        qwen_result=$(call_ai_with_context "qwen" "指摘された問題の代替実装を提案:
-$quad_context" 600)
-        echo "$qwen_result" > "$OUTPUT_DIR/qwen_alternative_implementations.txt"
-    ) &
+    _quad_review_qwen "$quad_context" "$OUTPUT_DIR/qwen_alternative_implementations.txt" &
     qwen_pid=$!
 
     # Droid: エンタープライズ基準評価
-    (
-        droid_result=$(call_ai_with_context "droid" "エンタープライズ基準の観点から評価:
-$quad_context" 900)
-        echo "$droid_result" > "$OUTPUT_DIR/droid_enterprise_standards.txt"
-    ) &
+    _quad_review_droid "$quad_context" "$OUTPUT_DIR/droid_enterprise_standards.txt" &
     droid_pid=$!
 
     # Codex: 最適化提案（レビュー結果の分析）
-    (
-        codex_analysis_result=$(call_ai_with_context "codex" "4つのレビュー結果を分析し、最適化提案を提供:
-$quad_context" 600)
-        echo "$codex_analysis_result" > "$OUTPUT_DIR/codex_optimization_suggestions.txt"
-    ) &
+    _quad_review_codex "$quad_context" "$OUTPUT_DIR/codex_optimization_suggestions.txt" &
     codex_analysis_pid=$!
 
     # Cursor: 開発者体験評価
-    (
-        cursor_result=$(call_ai_with_context "cursor" "開発者体験の観点からレビュー結果を評価:
-$quad_context" 600)
-        echo "$cursor_result" > "$OUTPUT_DIR/cursor_developer_experience.txt"
-    ) &
+    _quad_review_cursor "$quad_context" "$OUTPUT_DIR/cursor_developer_experience.txt" &
     cursor_pid=$!
 
     # Wait for all 6AI analysis to complete (check each individually for proper error handling)
@@ -322,7 +392,8 @@ $quad_context" 600)
 
     log_info "Generating integrated report with Claude..."
     local integrated_report
-    integrated_report=$(call_ai_with_context "claude" "$integrated_report_context" 300)
+    # Force non-interactive mode for automated workflow (bypass approval prompts)
+    WRAPPER_NON_INTERACTIVE=1 integrated_report=$(call_ai_with_context "claude" "$integrated_report_context" 300)
 
     # Save integrated report
     local report_file="$WORK_DIR/QUAD_REVIEW_REPORT.md"
@@ -388,7 +459,8 @@ EOF
 
     vibe_pipeline_done "multi-ai-quad-review" "success" "$total_duration" "10"
 
-    show_multi_ai_summary "Quad Review" "$total_duration" "$report_file"
+    # Note: show_multi_ai_summary function is not yet implemented
+    # show_multi_ai_summary "Quad Review" "$total_duration" "$report_file"
 
     echo ""
     log_success "Multi-AI Quad Review completed successfully!"

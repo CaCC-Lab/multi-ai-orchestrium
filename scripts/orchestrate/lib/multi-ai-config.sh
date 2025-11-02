@@ -94,7 +94,8 @@ check_yq_dependency() {
 
     # yq version check (v4.x required)
     local yq_version
-    yq_version=$(yq --version 2>&1 | grep -oP 'version v?\K[0-9]+' | head -1)
+    # Use grep -E for macOS compatibility (grep -P not available on macOS)
+    yq_version=$(yq --version 2>&1 | grep -oE 'version v?[0-9]+' | grep -oE '[0-9]+' | head -1)
 
     if [[ -z "$yq_version" ]]; then
         log_structured_error \
@@ -512,7 +513,8 @@ execute_sequential_phase() {
         return 0
     fi
 
-    local output_file="$work_dir/${ai}_${role}.md"
+    # Use simple filename to avoid "filename too long" errors
+    local output_file="$work_dir/${ai}_phase${phase_idx}.md"
     local prompt="$task
 
 Role: $role
@@ -545,7 +547,8 @@ execute_parallel_phase() {
     local max_parallel_jobs=4
     if command -v yq &>/dev/null; then
         local yaml_max
-        yaml_max=$(yq eval ".execution.max_parallel_jobs // 4" "$MULTI_AI_CONFIG" 2>/dev/null || echo "4")
+        local config_file="$PROJECT_ROOT/config/multi-ai-profiles.yaml"
+        yaml_max=$(yq eval ".execution.max_parallel_jobs // 4" "$config_file" 2>/dev/null || echo "4")
         if [[ "$yaml_max" =~ ^[0-9]+$ ]] && [ "$yaml_max" -gt 0 ]; then
             max_parallel_jobs=$yaml_max
         fi
@@ -579,7 +582,8 @@ execute_parallel_phase() {
             continue
         fi
 
-        local output_file="$work_dir/${ai}_${role}_${i}.md"
+        # Use simple filename to avoid "filename too long" errors
+        local output_file="$work_dir/${ai}_task${i}.md"
         local prompt="$task
 
 Role: $role

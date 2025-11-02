@@ -373,3 +373,62 @@ multi-ai-chatdev-develop() {
     # P2-1 & P2-2: Execute workflow using YAML configuration
     execute_yaml_workflow "$DEFAULT_PROFILE" "multi-ai-chatdev-develop" "$project"
 }
+
+# ============================================================================
+# Collaborative Planning Workflows (1 function)
+# ============================================================================
+
+# Multi-AI Collaborative Planning
+# Purpose: Generate comprehensive implementation plan with all 7 AIs
+# Output: Checklist-style Markdown document (PLAN-PROMPT.md compliant)
+# Duration: ~45 minutes (Phase 1: 15min, Phase 2: 20min, Phase 3: 10min)
+# P2-1 & P2-2: YAML-driven with parallel execution
+multi-ai-collaborative-planning() {
+    local task="$*"
+
+    # P1-1: Input sanitization
+    task=$(sanitize_input "$task") || return 1
+
+    show_multi_ai_banner
+    log_info "Task: $task"
+    log_info "Profile: balanced-multi-ai (collaborative-planning workflow)"
+    log_info "Mode: 7AI協調による実装計画書生成 (~45分)"
+    log_info "Output: チェックリスト式Markdown (PLAN-PROMPT.md準拠)"
+    echo ""
+    log_info "Phase 1: Strategic Analysis (Claude, Gemini, Amp 並列 ~15分)"
+    log_info "Phase 2: Detailed Design (Qwen, Droid, Codex 並列 ~20分)"
+    log_info "Phase 3: Integration & Validation (Cursor → Claude順次 ~10分)"
+    echo ""
+
+    # P2-1 & P2-2: Execute workflow using YAML configuration
+    execute_yaml_workflow "$DEFAULT_PROFILE" "multi-ai-collaborative-planning" "$task"
+}
+
+# Multi-AI Collaborative Testing
+# Purpose: Generate comprehensive test code with all 7 AIs
+# Output: Test analysis table + Test code (TESTCODE-PROMPT.md compliant)
+# Duration: ~70 minutes (Phase 1: 15min, Phase 2: 20min, Phase 3: 25min, Phase 4: 10min)
+# P2-1 & P2-2: YAML-driven with parallel execution
+multi-ai-collaborative-testing() {
+    local target="$*"
+
+    # P1-1: Input sanitization
+    target=$(sanitize_input "$target") || return 1
+
+    show_multi_ai_banner
+    log_info "Target: $target"
+    log_info "Profile: balanced-multi-ai (collaborative-testing workflow)"
+    log_info "Mode: 7AI協調によるテストコード生成 (~70分)"
+    log_info "Output: テスト観点表 + テストコード (TESTCODE-PROMPT.md準拠)"
+    echo ""
+    log_info "Phase 1: Test Strategy Definition (Gemini, Amp, Droid 並列 ~15分)"
+    log_info "Phase 2: Test Analysis Table (Claude, Qwen, Codex 並列 ~20分)"
+    log_info "Phase 3: Test Implementation (Qwen, Droid, Codex 並列 ~25分)"
+    log_info "Phase 4: Verification & Execution (Cursor → Claude順次 ~10分)"
+    echo ""
+    log_info "必須要件: 失敗系 ≥ 正常系、分岐網羅100%目標、Given/When/Then形式"
+    echo ""
+
+    # P2-1 & P2-2: Execute workflow using YAML configuration
+    execute_yaml_workflow "$DEFAULT_PROFILE" "multi-ai-collaborative-testing" "$target"
+}
