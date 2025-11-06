@@ -20,6 +20,23 @@
 set -euo pipefail
 
 # ============================================================================
+# Feature Flags & Dependencies
+# ============================================================================
+
+# Git Worktrees統合フラグ（フェーズ2）
+ENABLE_WORKTREES="${ENABLE_WORKTREES:-false}"
+
+# ワークツリーモジュールのロード
+if [[ "$ENABLE_WORKTREES" == "true" ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    source "$SCRIPT_DIR/worktree-core.sh"
+    source "$SCRIPT_DIR/worktree-execution.sh"
+    source "$SCRIPT_DIR/worktree-merge.sh"
+    source "$SCRIPT_DIR/worktree-cleanup.sh"
+    log_info "✓ Git Worktrees統合モード有効"
+fi
+
+# ============================================================================
 # Core Workflows (5 functions)
 # ============================================================================
 
@@ -52,6 +69,13 @@ multi-ai-speed-prototype() {
     show_multi_ai_banner
     log_info "Task: $task"
     log_info "Profile: speed-first-7ai (TRUE Multi-AI - 全AI参加)"
+
+    # フィーチャーフラグ表示
+    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
+        log_info "Mode: Git Worktrees統合モード（並列AI実行・競合ゼロ）"
+    else
+        log_info "Mode: Legacy並列実行モード"
+    fi
     echo ""
 
     # P1-2: Setup work directory
@@ -162,14 +186,36 @@ $plan
 重要: ファイルは $PROJECT_ROOT/examples/eva_tetris.py に存在します。"
 
     # Launch implementation layer in parallel
-    call_ai_with_context "qwen" "$qwen_prompt" 240 "$qwen_output" &
-    local qwen_pid=$!
-    call_ai_with_context "droid" "$droid_prompt" 900 "$droid_output" &  # 300→900秒: 実測で600秒でも大規模タスク失敗
-    local droid_pid=$!
+    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
+        # NEW: ワークツリーベース並列実行（競合ゼロ）
+        log_info "Creating worktrees for Qwen and Droid..."
+        create_all_worktrees qwen droid
 
-    # Wait for both implementations
-    wait $qwen_pid || log_warning "Qwen prototype timed out or failed"
-    wait $droid_pid || log_warning "Droid enterprise implementation timed out or failed"
+        log_info "Executing parallel implementations in isolated worktrees..."
+        # ワークツリー内でAI実行
+        (cd "$WORKTREE_BASE_DIR/qwen" && call_ai_with_context "qwen" "$qwen_prompt" 240 "$qwen_output") &
+        local qwen_pid=$!
+        (cd "$WORKTREE_BASE_DIR/droid" && call_ai_with_context "droid" "$droid_prompt" 900 "$droid_output") &
+        local droid_pid=$!
+
+        # Wait for both implementations
+        wait $qwen_pid || log_warning "Qwen prototype timed out or failed"
+        wait $droid_pid || log_warning "Droid enterprise implementation timed out or failed"
+
+        # 結果をメインディレクトリにコピー
+        [ -f "$WORKTREE_BASE_DIR/qwen/$qwen_output" ] && cp "$WORKTREE_BASE_DIR/qwen/$qwen_output" "$qwen_output"
+        [ -f "$WORKTREE_BASE_DIR/droid/$droid_output" ] && cp "$WORKTREE_BASE_DIR/droid/$droid_output" "$droid_output"
+    else
+        # LEGACY: 直接実行（後方互換性）
+        call_ai_with_context "qwen" "$qwen_prompt" 240 "$qwen_output" &
+        local qwen_pid=$!
+        call_ai_with_context "droid" "$droid_prompt" 900 "$droid_output" &  # 300→900秒: 実測で600秒でも大規模タスク失敗
+        local droid_pid=$!
+
+        # Wait for both implementations
+        wait $qwen_pid || log_warning "Qwen prototype timed out or failed"
+        wait $droid_pid || log_warning "Droid enterprise implementation timed out or failed"
+    fi
 
     # Collect implementation results
     local qwen_impl=""
@@ -295,6 +341,13 @@ EOF
         log_error "No implementation generated"
     fi
     echo ""
+
+    # クリーンアップ（ワークツリーモードの場合）
+    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
+        log_info "Cleaning up worktrees..."
+        cleanup_all_worktrees
+        log_info "✓ Worktrees cleaned up successfully"
+    fi
 }
 
 # Multi-AI Enterprise Quality (15-20分)

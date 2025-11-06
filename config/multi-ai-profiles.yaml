@@ -838,7 +838,7 @@ profiles:
 
                   ## セキュリティテストケース
                   - [ ] TC_SEC001: [シナリオ] - Given/When/Then
-                timeout: 300
+                timeout: 2400
 
               - name: "Amp - Test Planning & Prioritization"
                 ai: amp
@@ -866,7 +866,7 @@ profiles:
                   ## 品質ゲート
                   - [ ] カバレッジ: [目標値]
                   - [ ] テスト成功率: [目標値]
-                timeout: 600
+                timeout: 2400
                 blocking: false
 
               - name: "Droid - Enterprise Quality Standards"
@@ -892,7 +892,7 @@ profiles:
 
                   ## CI/CD統合
                   - [ ] [統合項目]: [実装方法]
-                timeout: 900
+                timeout: 2400
 
           # Phase 2: テスト観点表作成（並列、20分）
           - name: "Phase 2: Test Analysis Table Creation"
@@ -929,7 +929,7 @@ profiles:
                   | 項目 | 0 | 空文字列 | NULL | 最大長+1 | 不正な型 |
                   |-----|---|---------|------|----------|---------|
                   | [項目1] | TC_SP001 | TC_SP002 | TC_SP003 | TC_SP004 | TC_SP005 |
-                timeout: 600
+                timeout: 2400
                 input_from: ["gemini", "amp", "droid"]
 
               - name: "Qwen - Normal & Abnormal Test Case Design"
@@ -971,7 +971,7 @@ profiles:
                   ### エッジケース（最低5件）
                   - [ ] TC_EDG001: [エッジケースシナリオ]
                     - Given/When/Then
-                timeout: 600
+                timeout: 2400
                 input_from: ["claude", "amp"]
 
               - name: "Codex - Edge Cases & Exception Scenarios"
@@ -1008,7 +1008,7 @@ profiles:
                     - Given: [文字列に数値型を期待]
                     - When: [実行]
                     - Then: [TypeError例外]
-                timeout: 300
+                timeout: 2400
                 input_from: ["claude", "qwen"]
 
           # Phase 3: テストコード実装（並列冗長、25分）
@@ -1034,7 +1034,7 @@ profiles:
                   - テストデータのセットアップ・クリーンアップ
 
                   出力: テストファイル（test_*.py または *.test.js）
-                timeout: 600
+                timeout: 2400
                 input_from: ["claude", "qwen", "codex"]
 
               - name: "Droid - Production-Grade Test Implementation"
@@ -1063,7 +1063,7 @@ profiles:
                   8. 分岐網羅100%目標
 
                   出力: テストファイル（test_*.py または *.test.js）
-                timeout: 900
+                timeout: 2400
                 input_from: ["claude", "qwen", "codex", "droid"]
 
               - name: "Codex - Compare & Integrate Implementations"
@@ -1085,12 +1085,12 @@ profiles:
                   - 不足しているテストケースの追加
 
                   出力: 統合されたテストファイル
-                timeout: 600
+                timeout: 2400
                 input_from: ["qwen", "droid"]
 
-          # Phase 4: 検証と実行（順次、10分）
+          # Phase 4: 検証と実行（並列、10分） - ⚠️ 修正: sequentialからparallelに変更
           - name: "Phase 4: Verification & Execution"
-            sequential:
+            parallel:
               - name: "Cursor - Test Execution & Coverage Measurement"
                 ai: cursor
                 role: |
@@ -1132,7 +1132,7 @@ profiles:
 
                   ### 不足している観点（もしあれば）
                   - [ ] [追加すべきテストケース]
-                timeout: 600
+                timeout: 2400
                 input_from: ["codex"]
 
               - name: "Claude - Final Integration & Documentation"
@@ -1253,7 +1253,7 @@ profiles:
                   - `test_*.py` (or `*.test.js`): テストコード
                   - `README_TEST.md`: 実行手順
                   - `TEST_COVERAGE_REPORT.md`: カバレッジレポート
-                timeout: 600
+                timeout: 2400
                 input_from: ["gemini", "amp", "droid", "claude", "qwen", "codex", "cursor"]
 
   # Speed-First Multi-AI Profile
