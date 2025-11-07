@@ -54,8 +54,22 @@ multi-ai-full-orchestrate() {
     log_info "Mode: YAML-driven with parallel execution"
     echo ""
 
+    # Worktree trap設定（異常終了時の自動クリーンアップ）
+    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
+        setup_worktree_cleanup_trap
+    fi
+
     # P2-1 & P2-2: Execute workflow using YAML configuration
     execute_yaml_workflow "$DEFAULT_PROFILE" "multi-ai-full-orchestrate" "$task"
+    local result=$?
+
+    # クリーンアップ（ワークツリーモードの場合）
+    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
+        teardown_worktree_cleanup_trap  # trap解除（正常終了時）
+        cleanup_all_worktrees || log_warning "Worktree cleanup had issues"
+    fi
+
+    return $result
 }
 
 # Multi-AI Speed Prototype (2-4分)
@@ -77,6 +91,11 @@ multi-ai-speed-prototype() {
         log_info "Mode: Legacy並列実行モード"
     fi
     echo ""
+
+    # Worktree trap設定（異常終了時の自動クリーンアップ）
+    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
+        setup_worktree_cleanup_trap
+    fi
 
     # P1-2: Setup work directory
     # P1-2: Setup work directory - persistent logs for audit trail
@@ -345,7 +364,8 @@ EOF
     # クリーンアップ（ワークツリーモードの場合）
     if [[ "$ENABLE_WORKTREES" == "true" ]]; then
         log_info "Cleaning up worktrees..."
-        cleanup_all_worktrees
+        teardown_worktree_cleanup_trap  # trap解除（正常終了時）
+        cleanup_all_worktrees || log_warning "Worktree cleanup had issues"
         log_info "✓ Worktrees cleaned up successfully"
     fi
 }
@@ -365,8 +385,22 @@ multi-ai-enterprise-quality() {
     log_info "Mode: YAML-driven with parallel execution"
     echo ""
 
+    # Worktree trap設定（異常終了時の自動クリーンアップ）
+    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
+        setup_worktree_cleanup_trap
+    fi
+
     # P2-1 & P2-2: Execute workflow using YAML configuration
     execute_yaml_workflow "$DEFAULT_PROFILE" "multi-ai-enterprise-quality" "$task"
+    local result=$?
+
+    # クリーンアップ（ワークツリーモードの場合）
+    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
+        teardown_worktree_cleanup_trap  # trap解除（正常終了時）
+        cleanup_all_worktrees || log_warning "Worktree cleanup had issues"
+    fi
+
+    return $result
 }
 
 # Multi-AI Hybrid Development (推奨)
@@ -383,8 +417,22 @@ multi-ai-hybrid-development() {
     log_info "Mode: YAML-driven with parallel execution (推奨)"
     echo ""
 
+    # Worktree trap設定（異常終了時の自動クリーンアップ）
+    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
+        setup_worktree_cleanup_trap
+    fi
+
     # P2-1 & P2-2: Execute workflow using YAML configuration
     execute_yaml_workflow "$DEFAULT_PROFILE" "multi-ai-hybrid-development" "$task"
+    local result=$?
+
+    # クリーンアップ（ワークツリーモードの場合）
+    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
+        teardown_worktree_cleanup_trap  # trap解除（正常終了時）
+        cleanup_all_worktrees || log_warning "Worktree cleanup had issues"
+    fi
+
+    return $result
 }
 
 # Multi-AI Consensus Review
