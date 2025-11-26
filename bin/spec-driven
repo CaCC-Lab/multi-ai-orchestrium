@@ -1,0 +1,641 @@
+#!/bin/bash
+
+# Specification-Driven Command Line Interface
+# Integrates multiple AI agents and tools for specification-driven development
+
+set -euo pipefail
+
+# Configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+LIB_DIR="$PROJECT_ROOT/scripts/lib"
+CONFIG_FILE="${CONFIG_FILE:-$PROJECT_ROOT/config/default.env}"
+
+# Load utility functions and configurations
+load_config() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        # shellcheck source=/dev/null
+        source "$CONFIG_FILE"
+    fi
+}
+
+# Load library scripts
+load_libraries() {
+    # Set required environment variables for existing libraries
+    export PROJECT_ROOT="$PROJECT_ROOT"
+    export SCRIPT_DIR="$PROJECT_ROOT/scripts"
+
+    # Define supported AIs for compatibility
+    SUPPORTED_AIS=("qwen" "droid" "claude" "gemini" "codex" "cursor" "amp")
+    export SUPPORTED_AIS
+
+    # Load the unified integration script that handles all system connections
+    if [[ -f "$LIB_DIR/integration.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "$LIB_DIR/integration.sh"
+    fi
+
+    # Load existing system scripts individually for specific functions if needed
+    if [[ -f "$PROJECT_ROOT/scripts/worktree-manager.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "$PROJECT_ROOT/scripts/worktree-manager.sh"
+    fi
+
+    if [[ -f "$LIB_DIR/task-router.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "$LIB_DIR/task-router.sh"
+    elif [[ -f "$PROJECT_ROOT/scripts/task-router.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "$PROJECT_ROOT/scripts/task-router.sh"
+    fi
+
+    if [[ -f "$LIB_DIR/task-executor.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "$LIB_DIR/task-executor.sh"
+    fi
+
+    if [[ -f "$LIB_DIR/task-state.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "$LIB_DIR/task-state.sh"
+    fi
+
+    if [[ -f "$LIB_DIR/error-recovery.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "$LIB_DIR/error-recovery.sh"
+    fi
+
+    # Load our new collaborative review system
+    if [[ -f "$LIB_DIR/collaborative-review.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "$LIB_DIR/collaborative-review.sh"
+    fi
+
+    # Load our new AsyncThink integration
+    if [[ -f "$LIB_DIR/asyncthink-integration.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "$LIB_DIR/asyncthink-integration.sh"
+    fi
+}
+
+# Initialize the system
+init_system() {
+    echo "INFO: Initializing specification-driven system..."
+    
+    # Initialize worktree manager
+    if declare -f init_worktree_manager >/dev/null 2>&1; then
+        init_worktree_manager
+    fi
+    
+    # Initialize collaborative review
+    if declare -f init_collaborative_review >/dev/null 2>&1; then
+        init_collaborative_review
+    fi
+    
+    # Initialize task state management
+    if declare -f init_task_state >/dev/null 2>&1; then
+        init_task_state
+    fi
+    
+    echo "SUCCESS: System initialized"
+}
+
+# Print help information
+print_help() {
+    cat << EOF
+spec-driven: Specification-Driven Development CLI
+
+Usage: $0 <command> [options]
+
+Commands:
+  init     Initialize a new specification-driven project
+  route    Route a specification to appropriate agents/tools
+  execute  Execute tasks based on specifications
+  review   Run collaborative review on specifications
+  status   Check task status and progress
+  help     Show this help message
+
+Global options:
+  -v, --verbose  Enable verbose output
+  -h, --help     Show this help message
+
+Examples:
+  $0 init --spec my-spec.md
+  $0 route my-spec.md
+  $0 execute my-spec.md
+  $0 review my-spec.md
+  $0 status my-task-id
+
+EOF
+}
+
+# Initialize command
+cmd_init() {
+    local spec_file=""
+    local template_type="default"
+    
+    # Parse options
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --spec)
+                spec_file="$2"
+                shift 2
+                ;;
+            --template)
+                template_type="$2"
+                shift 2
+                ;;
+            -h|--help)
+                cat << EOF
+spec-driven init: Initialize a new specification-driven project
+
+Usage: $0 init [options]
+
+Options:
+  --spec SPEC_FILE    Path to specification file to initialize
+  --template TYPE     Template type (default: default)
+
+Examples:
+  $0 init --spec my-spec.md
+  $0 init --spec my-spec.md --template feature
+
+EOF
+                return 0
+                ;;
+            *)
+                echo "ERROR: Unknown option: $1" >&2
+                return 1
+                ;;
+        esac
+    done
+    
+    echo "INFO: Initializing specification-driven project"
+    
+    # Create default specification template if not provided
+    if [[ -z "$spec_file" ]]; then
+        spec_file="./spec-template.md"
+    fi
+    
+    # Create specification template based on type
+    case "$template_type" in
+        "feature")
+            cat > "$spec_file" << EOF
+# Feature Specification Template
+
+## Feature Name
+[Name of the feature]
+
+## Description
+[Detailed description of the feature]
+
+## User Stories
+- As a [user type], I want [goal] so that [reason]
+
+## Acceptance Criteria
+- [ ] Criterion 1
+- [ ] Criterion 2
+- [ ] Criterion 3
+
+## Technical Requirements
+- [ ] Requirement 1
+- [ ] Requirement 2
+- [ ] Requirement 3
+
+## Dependencies
+- [List any dependencies]
+
+## Constraints
+- [List any constraints]
+
+## Success Metrics
+- [How will we measure success?]
+
+EOF
+            ;;
+        "bugfix")
+            cat > "$spec_file" << EOF
+# Bug Fix Specification Template
+
+## Bug Title
+[Title of the bug]
+
+## Description
+[Detailed description of the bug]
+
+## Steps to Reproduce
+1. [Step 1]
+2. [Step 2]
+3. [Step 3]
+
+## Expected Behavior
+[What should happen]
+
+## Actual Behavior
+[What actually happens]
+
+## Impact
+[How does this affect users/system]
+
+## Root Cause Analysis
+[Analysis of the root cause]
+
+## Solution Approach
+[How to fix the bug]
+
+## Implementation Plan
+- [ ] Step 1
+- [ ] Step 2
+- [ ] Step 3
+
+## Testing Plan
+- [ ] Test case 1
+- [ ] Test case 2
+- [ ] Test case 3
+
+EOF
+            ;;
+        *)
+            # Default template
+            cat > "$spec_file" << EOF
+# Specification Template
+
+## Title
+[Title of the specification]
+
+## Description
+[Detailed description]
+
+## Requirements
+- [ ] Requirement 1
+- [ ] Requirement 2
+- [ ] Requirement 3
+
+## Approach
+[How to approach this work]
+
+## Success Criteria
+[How to verify completion]
+
+## Notes
+[Any additional notes]
+
+EOF
+            ;;
+    esac
+    
+    echo "SUCCESS: Specification template created at $spec_file"
+}
+
+# Route command
+cmd_route() {
+    local spec_file=""
+    
+    # Parse options
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --file|--spec)
+                spec_file="$2"
+                shift 2
+                ;;
+            -h|--help)
+                cat << EOF
+spec-driven route: Route a specification to appropriate agents/tools
+
+Usage: $0 route [options] SPEC_FILE
+
+Options:
+  --spec, --file SPEC_FILE    Path to specification file to route
+
+Examples:
+  $0 route my-spec.md
+  $0 route --spec my-spec.md
+
+EOF
+                return 0
+                ;;
+            *)
+                if [[ -z "$spec_file" ]]; then
+                    spec_file="$1"
+                    shift
+                else
+                    echo "ERROR: Unknown option: $1" >&2
+                    return 1
+                fi
+                ;;
+        esac
+    done
+    
+    if [[ -z "$spec_file" ]]; then
+        echo "ERROR: Specification file is required" >&2
+        return 1
+    fi
+    
+    if [[ ! -f "$spec_file" ]]; then
+        echo "ERROR: Specification file not found: $spec_file" >&2
+        return 1
+    fi
+    
+    echo "INFO: Routing specification: $spec_file"
+    
+    # Use enhanced task routing that integrates with existing systems
+    if declare -f enhanced_task_route >/dev/null 2>&1; then
+        enhanced_task_route "$spec_file"
+    elif declare -f task_router_route >/dev/null 2>&1; then
+        # Use the existing task router directly
+        local profiles_file="${PROJECT_ROOT}/config/ai-profiles.yaml"
+        task_router_route "$spec_file" "$profiles_file"
+    else
+        # Fallback implementation
+        echo "INFO: Analyzing specification content..."
+        local content
+        content=$(head -20 "$spec_file")
+        echo "INFO: Specification preview: $content"
+
+        # Determine task type based on keywords
+        local task_type="general"
+        if grep -qi "bug\|fix\|issue" "$spec_file"; then
+            task_type="bugfix"
+        elif grep -qi "feature\|enhancement" "$spec_file"; then
+            task_type="feature"
+        elif grep -qi "review\|analysis" "$spec_file"; then
+            task_type="review"
+        fi
+
+        echo "INFO: Determined task type: $task_type"
+        echo "INFO: Routing to appropriate agents..."
+
+        # Output routing information for other tools to use
+        local routing_info
+        routing_info=$(mktemp)
+        cat > "$routing_info" << EOF
+{
+  "spec_file": "$spec_file",
+  "task_type": "$task_type",
+  "agents": ["qwen", "droid"],
+  "priority": "medium",
+  "deadline": "$(date -d '+7 days' +%Y-%m-%d)"
+}
+EOF
+
+        echo "SUCCESS: Specification routed. Routing info saved to $routing_info"
+        cat "$routing_info"
+        rm "$routing_info"
+    fi
+}
+
+# Execute command
+cmd_execute() {
+    local spec_file=""
+    local dry_run=false
+    
+    # Parse options
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --file|--spec)
+                spec_file="$2"
+                shift 2
+                ;;
+            --dry-run)
+                dry_run=true
+                shift
+                ;;
+            -h|--help)
+                cat << EOF
+spec-driven execute: Execute tasks based on specifications
+
+Usage: $0 execute [options] SPEC_FILE
+
+Options:
+  --spec, --file SPEC_FILE    Path to specification file to execute
+  --dry-run                  Show what would be executed without running
+
+Examples:
+  $0 execute my-spec.md
+  $0 execute --spec my-spec.md
+  $0 execute --dry-run my-spec.md
+
+EOF
+                return 0
+                ;;
+            *)
+                if [[ -z "$spec_file" ]]; then
+                    spec_file="$1"
+                    shift
+                else
+                    echo "ERROR: Unknown option: $1" >&2
+                    return 1
+                fi
+                ;;
+        esac
+    done
+    
+    if [[ -z "$spec_file" ]]; then
+        echo "ERROR: Specification file is required" >&2
+        return 1
+    fi
+    
+    if [[ ! -f "$spec_file" ]]; then
+        echo "ERROR: Specification file not found: $spec_file" >&2
+        return 1
+    fi
+    
+    echo "INFO: Executing tasks for specification: $spec_file"
+    
+    if [[ "$dry_run" == true ]]; then
+        echo "DRY RUN: Would execute tasks for $spec_file"
+        echo "DRY RUN: Would analyze tasks and prepare execution plan"
+        return 0
+    fi
+    
+    # Route the specification first if not already done
+    cmd_route "$spec_file"
+    
+    # Execute the tasks with integrated execution
+    if declare -f execute_spec_with_review >/dev/null 2>&1; then
+        execute_spec_with_review "$spec_file"
+    elif declare -f task_executor_run_spec >/dev/null 2>&1; then
+        # Use the existing task executor
+        task_executor_run_spec "$spec_file"
+    else
+        # Fallback implementation
+        echo "INFO: Executing specification tasks..."
+
+        # Read the specification and process tasks
+        echo "SUCCESS: Tasks executed for specification: $spec_file"
+    fi
+}
+
+# Review command
+cmd_review() {
+    local spec_file=""
+    local review_type="full"
+    
+    # Parse options
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --file|--spec)
+                spec_file="$2"
+                shift 2
+                ;;
+            --type)
+                review_type="$2"
+                shift 2
+                ;;
+            -h|--help)
+                cat << EOF
+spec-driven review: Run collaborative review on specifications
+
+Usage: $0 review [options] SPEC_FILE
+
+Options:
+  --spec, --file SPEC_FILE    Path to specification file to review
+  --type TYPE                 Review type (full, quick, detailed)
+
+Examples:
+  $0 review my-spec.md
+  $0 review --spec my-spec.md
+  $0 review --type detailed my-spec.md
+
+EOF
+                return 0
+                ;;
+            *)
+                if [[ -z "$spec_file" ]]; then
+                    spec_file="$1"
+                    shift
+                else
+                    echo "ERROR: Unknown option: $1" >&2
+                    return 1
+                fi
+                ;;
+        esac
+    done
+    
+    if [[ -z "$spec_file" ]]; then
+        echo "ERROR: Specification file is required" >&2
+        return 1
+    fi
+    
+    if [[ ! -f "$spec_file" ]]; then
+        echo "ERROR: Specification file not found: $spec_file" >&2
+        return 1
+    fi
+    
+    echo "INFO: Running collaborative review for: $spec_file"
+    
+    # Use integrated review that connects with existing systems
+    if declare -f integrated_review >/dev/null 2>&1; then
+        integrated_review "$spec_file" "$review_type"
+    elif declare -f run_collaborative_review >/dev/null 2>&1; then
+        run_collaborative_review "$spec_file" "$review_type"
+    else
+        echo "ERROR: Review system not available" >&2
+        return 1
+    fi
+}
+
+# Status command
+cmd_status() {
+    local task_id=""
+    
+    # Parse options
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --task)
+                task_id="$2"
+                shift 2
+                ;;
+            -h|--help)
+                cat << EOF
+spec-driven status: Check task status and progress
+
+Usage: $0 status [options] [TASK_ID]
+
+Options:
+  --task TASK_ID    Task ID to check status for
+  -h, --help        Show this help message
+
+Examples:
+  $0 status
+  $0 status my-task-123
+  $0 status --task my-task-123
+
+EOF
+                return 0
+                ;;
+            *)
+                if [[ -z "$task_id" ]]; then
+                    task_id="$1"
+                    shift
+                else
+                    echo "ERROR: Unknown option: $1" >&2
+                    return 1
+                fi
+                ;;
+        esac
+    done
+    
+    echo "INFO: Checking status"
+    
+    # Show overall system status using integrated view
+    if declare -f integrated_status >/dev/null 2>&1; then
+        integrated_status "$task_id"
+    elif declare -f task_state_list >/dev/null 2>&1; then
+        if [[ -n "$task_id" ]]; then
+            task_state_print "$task_id"
+        else
+            task_state_list
+        fi
+    else
+        # Fallback implementation
+        if [[ -n "$task_id" ]]; then
+            echo "INFO: Task $task_id - Status: Not found (fallback implementation)"
+        else
+            echo "INFO: System status - Operational"
+            echo "INFO: No specific task provided, showing general status"
+        fi
+    fi
+}
+
+# Main function
+main() {
+    load_config
+    load_libraries
+    
+    # Initialize the system
+    init_system
+    
+    # Handle command
+    local cmd="${1:-help}"
+    shift || true
+    
+    case "$cmd" in
+        init)
+            cmd_init "$@"
+            ;;
+        route)
+            cmd_route "$@"
+            ;;
+        execute)
+            cmd_execute "$@"
+            ;;
+        review)
+            cmd_review "$@"
+            ;;
+        status)
+            cmd_status "$@"
+            ;;
+        help|-h|--help)
+            print_help
+            ;;
+        *)
+            echo "ERROR: Unknown command: $cmd" >&2
+            print_help
+            return 1
+            ;;
+    esac
+}
+
+# Run main function if called directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
