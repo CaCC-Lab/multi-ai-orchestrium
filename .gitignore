@@ -224,6 +224,10 @@ hello-world.py
 docs/
 tests/
 
+# Exception: Keep worktree documentation (essential for users)
+!docs/worktree/
+!docs/worktree/**
+
 
 # ========== Keep These Files ==========
 # Keep empty log directories with .gitkeep

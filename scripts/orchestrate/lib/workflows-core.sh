@@ -33,7 +33,8 @@ if [[ "$ENABLE_WORKTREES" == "true" ]]; then
     source "$SCRIPT_DIR/worktree-execution.sh"
     source "$SCRIPT_DIR/worktree-merge.sh"
     source "$SCRIPT_DIR/worktree-cleanup.sh"
-    log_info "✓ Git Worktrees統合モード有効"
+    source "$SCRIPT_DIR/worktree-history.sh"  # Phase 2.1.2: 実行履歴追跡
+    log_info "✓ Git Worktrees統合モード有効（履歴追跡含む）"
 fi
 
 # ============================================================================
@@ -54,6 +55,14 @@ multi-ai-full-orchestrate() {
     log_info "Mode: YAML-driven with parallel execution"
     echo ""
 
+    # Phase 2.1.2: 実行履歴記録開始
+    local workflow_id="multi-ai-full-orchestrate-$(date +%s)-$$"
+    local start_time=$(date +%s)
+    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
+        local ais_json='["claude","gemini","qwen","amp","droid","codex","cursor"]'
+        record_worktree_execution_start "$workflow_id" "$task" "$ais_json"
+    fi
+
     # Worktree trap設定（異常終了時の自動クリーンアップ）
     if [[ "$ENABLE_WORKTREES" == "true" ]]; then
         setup_worktree_cleanup_trap
@@ -67,6 +76,20 @@ multi-ai-full-orchestrate() {
     if [[ "$ENABLE_WORKTREES" == "true" ]]; then
         teardown_worktree_cleanup_trap  # trap解除（正常終了時）
         cleanup_all_worktrees || log_warning "Worktree cleanup had issues"
+    fi
+
+    # Phase 2.1.2: 実行履歴記録終了
+    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
+        local end_time=$(date +%s)
+        local duration=$((end_time - start_time))
+        local status="success"
+        [[ $result -ne 0 ]] && status="failure"
+        
+        # メトリクス収集
+        local worktrees_created=$(query_worktree_state "$(date +%Y%m%d)" "" "active" 2>/dev/null | wc -l || echo "0")
+        local metrics_json="{\"worktrees_created\":$worktrees_created,\"errors\":$result}"
+        
+        record_worktree_execution_end "$workflow_id" "$status" "$duration" "$metrics_json"
     fi
 
     return $result

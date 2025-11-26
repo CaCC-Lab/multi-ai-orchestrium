@@ -7,6 +7,7 @@ set -euo pipefail
 # 依存関係をソース
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/worktree-core.sh"
+source "$SCRIPT_DIR/worktree-state.sh"
 
 # ========================================
 # trap設定・解除関数
@@ -130,15 +131,20 @@ cleanup_worktree() {
 
   # 状態をクリーニング中に更新
   save_worktree_state "$ai_name" "cleaning"
+  
+  local branch_name=$(cd "$worktree_path" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+  local metadata
+  metadata=$(jq -n \
+    --arg branch "$branch_name" \
+    --arg worktree "$worktree_path" \
+    '{branch: $branch, worktree: $worktree}')
+  update_worktree_state "$ai_name" "cleaning" "$metadata"
 
   vibe_log "worktree-cleanup" "start" \
     "{\"ai\":\"$ai_name\",\"path\":\"$worktree_path\",\"force\":$force}" \
     "$ai_nameのワークツリーをクリーンアップ中" \
     "[\"backup-data\"]" \
     "worktree-cleanup"
-
-  # ブランチ名を取得（削除前）
-  local branch_name=$(cd "$worktree_path" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 
   # ワークツリーを削除（自動リトライ＆--force適用）
   local exit_code=0
@@ -200,6 +206,7 @@ cleanup_worktree() {
 
   # 状態をnoneに更新
   save_worktree_state "$ai_name" "none"
+  update_worktree_state "$ai_name" "none" "{}"
 
   vibe_log "worktree-cleanup" "done" \
     "{\"ai\":\"$ai_name\",\"exit_code\":$exit_code}" \
