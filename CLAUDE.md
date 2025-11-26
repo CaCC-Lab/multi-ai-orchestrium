@@ -352,6 +352,62 @@ pair-multi-ai-driver "タスク"            # ドライバー（Qwen + Droid）
 pair-multi-ai-navigator "コード"         # ナビゲーター（Gemini + Amp）
 ```
 
+## Git Worktrees統合（2025-11-08実装）
+
+### Worktree統合モードの有効化
+
+7AIが独立したGit Worktreeで並列実行できます。ファイル競合なしで並列開発が可能です。
+
+```bash
+# Worktree統合モードを有効化
+export ENABLE_WORKTREES=true
+
+# ワークフロー実行
+source scripts/orchestrate/orchestrate-multi-ai.sh
+multi-ai-speed-prototype "機能の説明"
+```
+
+**利点:**
+- ✅ ファイル競合なしの完全並列実行
+- ✅ 各AIが独立したワークツリーで作業
+- ✅ 異常終了時の自動クリーンアップ（trap管理）
+- ✅ クリーンアップ成功率100%（Phase 0修正済み）
+
+### Worktree対応ワークフロー
+
+以下の4ワークフローがWorktree統合に対応しています:
+
+1. `multi-ai-speed-prototype` - 高速プロトタイプ（2 worktrees）
+2. `multi-ai-full-orchestrate` - フルオーケストレーション（7 worktrees）
+3. `multi-ai-enterprise-quality` - エンタープライズ品質（3 worktrees）
+4. `multi-ai-hybrid-development` - ハイブリッド開発（4 worktrees）
+
+### Worktree統合テスト
+
+```bash
+# 全ワークフロー統合テスト
+bash scripts/test-all-worktree-workflows.sh
+```
+
+詳細: [WORKTREE_TEST_PROCEDURE.md](WORKTREE_TEST_PROCEDURE.md)
+
+### トラブルシューティング
+
+**Worktreeが残った場合:**
+```bash
+# 手動クリーンアップ
+git worktree prune -v
+rm -rf worktrees/
+git branch | grep "worktree/" | xargs -r git branch -D
+```
+
+**Legacyモードに戻す:**
+```bash
+# Worktree統合を無効化
+export ENABLE_WORKTREES=false
+# または環境変数を設定しない（デフォルトでLegacyモード）
+```
+
 ## 推奨開発ワークフロー
 
 ### 1. 通常開発フロー

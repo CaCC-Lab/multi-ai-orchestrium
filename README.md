@@ -7,11 +7,15 @@ ChatDevとChain-of-Agentsを統合し、Claude、Gemini、Amp、Qwen、Droid、C
 [![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)]()
 [![Version](https://img.shields.io/badge/Version-v3.0-blue)]()
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/Tests-47%2B%20passing-success)]()
+[![Worktree](https://img.shields.io/badge/Worktree-Integrated-blueviolet)]()
+[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=github-actions&logoColor=white)](.github/workflows/worktree-test.yml)
 
 ## 🌟 主な特徴
 
 - **YAML駆動設計**: スクリプト変更なしで役割分担を変更可能
 - **2つの協調パターン**: ChatDev（役割ベース）+ Chain-of-Agents（分割統治）
+- **Git Worktrees統合** (NEW!): ファイル競合なしの完全並列実行、クリーンアップ成功率100%
 - **13個のレビューシステム**: 5AI個別 + 3コア + Claude専用2 + その他2 + 統一IF + 自動ルーティング
 - **Primary/Fallback機構**: 高可用性98%以上
 - **VibeLogger統合**: AI最適化された構造化ログ
@@ -121,6 +125,29 @@ export TDD_PROFILE=balanced  # classic_cycle, speed_first, quality_first
 # TDDサイクル実行
 tdd-multi-ai-cycle "新機能"
 ```
+
+### Git Worktrees統合（完全並列実行）
+
+7AIが独立したGit Worktreeで並列実行。ファイル競合なしで開発できます。
+
+```bash
+# Worktree統合モードを有効化
+export ENABLE_WORKTREES=true
+
+# ワークフロー実行
+source scripts/orchestrate/orchestrate-multi-ai.sh
+multi-ai-speed-prototype "機能の説明"
+
+# 全ワークフロー統合テスト
+bash scripts/test-all-worktree-workflows.sh
+```
+
+**利点:**
+- ✅ ファイル競合なしの完全並列実行
+- ✅ 異常終了時の自動クリーンアップ（trap管理）
+- ✅ クリーンアップ成功率100%
+
+詳細: [WORKTREE_TEST_PROCEDURE.md](WORKTREE_TEST_PROCEDURE.md)
 
 ## 📚 レビューシステム概要
 
