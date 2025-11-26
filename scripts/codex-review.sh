@@ -544,6 +544,9 @@ execute_codex_review() {
                     # VibeLogger: tool.done (fallback_success)
                     vibe_tool_done "codex_review" "fallback_success" "$issues_found" "$execution_time"
 
+                    # Reset status to success (fallback succeeded, so overall status should be 0)
+                    status=0
+
                     # Return to original directory and output result
                     cd "$original_dir" || true
                     echo "$md_file:$json_file:0"

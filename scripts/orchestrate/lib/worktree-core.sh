@@ -7,22 +7,22 @@ set -euo pipefail
 # 依存関係をソース
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../../../bin/vibe-logger-lib.sh"
-source "$SCRIPT_DIR/worktree-errors.sh"
-source "$SCRIPT_DIR/worktree-state.sh"
 
-# worktree-metrics.shのロード（Phase 2.1.3）
-if [[ -f "$SCRIPT_DIR/worktree-metrics.sh" ]]; then
-    source "$SCRIPT_DIR/worktree-metrics.sh"
+# Phase 5 Issue #4: Prometheus Metrics
+METRICS_LIB="$SCRIPT_DIR/../../lib/worktree-metrics.sh"
+if [[ -f "$METRICS_LIB" ]]; then
+    source "$METRICS_LIB"
+    # メトリクスの初期化（初回のみ）
+    if [[ ! -f "${METRICS_FILE:-}" ]] || [[ ! -d "$(dirname "${METRICS_FILE:-/tmp}")" ]]; then
+        init_metrics 2>/dev/null || true
+    fi
 fi
 
 # グローバル設定
 WORKTREE_BASE_DIR="${WORKTREE_BASE_DIR:-worktrees}"
 WORKTREE_LOCK_FILE="/tmp/multi-ai-worktree.lock"
 export WORKTREE_LOCK_FILE  # 並列実行サブプロセス対応
-
-# 並列度制御（デフォルト: 4）
-# 環境変数でカスタマイズ可能: export MAX_PARALLEL_WORKTREES=7
-MAX_PARALLEL_WORKTREES="${MAX_PARALLEL_WORKTREES:-4}"
+WORKTREE_SHADOW_MODE="${WORKTREE_SHADOW_MODE:-false}"
 
 # NDJSON形式のステートファイル
 # 各行が独立したJSONオブジェクト（Newline Delimited JSON）
@@ -225,10 +225,15 @@ get_worktree_state() {
 create_worktree() {
   local ai_name="$1"
   local branch_name="${2-}"
+  local task_id="${3:-default}"       # Phase 5: API統一化（worktree-manager.sh互換）
+  local base_ref="${4:-HEAD}"         # Phase 5: API統一化（worktree-manager.sh互換）
+
+  # Phase 5 Issue #4: メトリクス記録開始時刻
+  local create_start_time=$(date +%s.%N 2>/dev/null || date +%s)
 
   # 入力検証
   if [[ ! "$ai_name" =~ ^(claude|gemini|amp|qwen|droid|codex|cursor)$ ]]; then
-    error_wt001_invalid_ai_name "$ai_name"
+    echo "ERROR: 無効なAI名: $ai_name" >&2
     return 1
   fi
 
@@ -236,7 +241,7 @@ create_worktree() {
   if [[ $# -ge 2 ]]; then
     # 第2引数が渡された場合（空文字列を含む）
     if [[ -z "$branch_name" ]]; then
-      error_wt002_empty_branch_name
+      echo "ERROR: ブランチ名は空にできません" >&2
       return 1
     fi
   else
@@ -244,54 +249,153 @@ create_worktree() {
     branch_name="ai/${ai_name}/$(date +%Y%m%d-%H%M%S)"
   fi
 
+  # Phase 5: タスク説明をブランチ名にサニタイゼーション
+  # 例: "implement user authentication" → "implement-user-authentication"
+  if [[ "$branch_name" =~ [[:space:]] ]]; then
+    branch_name=$(echo "$branch_name" | sed 's/[^a-zA-Z0-9_\/-]/-/g' | sed 's/--*/-/g')
+  fi
+
   # Git公式のブランチ名検証
-  if ! git check-ref-format --branch "$branch_name" 2>/dev/null; then
-    error_wt003_invalid_branch_name "$branch_name"
+  if ! git check-ref-format --branch "$branch_name" >/dev/null 2>&1; then
+    error_with_solution "不正なブランチ名: $branch_name" \
+      "Git公式のブランチ名制約に違反しています
+- 使用不可文字: ASCII制御文字, スペース, ~, ^, :, ?, *, [
+- 使用不可パターン: 連続スラッシュ(//), .で開始, .lockで終了
+- 詳細: git help check-ref-format
+- 例: feature/my-branch (OK), feature//bug (NG)"
     return 1
   fi
 
-  local worktree_path="$WORKTREE_BASE_DIR/$ai_name"
+  # Phase 5: task_id対応のパス計算（worktree-manager.sh互換）
+  local worktree_path
+  if [[ "$task_id" == "default" ]]; then
+    worktree_path="$WORKTREE_BASE_DIR/$ai_name"
+  else
+    worktree_path="$WORKTREE_BASE_DIR/$ai_name/$task_id"
+  fi
 
   # ワークツリーが既に存在するかチェック
   if [[ -d "$worktree_path" ]]; then
-    error_wt102_already_exists "$worktree_path"
+    echo "WARNING: ワークツリーが既に存在します: $worktree_path" >&2
     return 1
   fi
+
+
+  # Shadow Mode チェック
+  if [[ "$WORKTREE_SHADOW_MODE" == "true" ]]; then
+    echo "SHADOW MODE: Would create worktree at $worktree_path" >&2
+    vibe_log "worktree-lifecycle" "shadow_create" "{\"ai\":\"$ai_name\",\"path\":\"$worktree_path\"}" "Shadow mode" "[]" "worktree-core"
+    echo "$worktree_path"
+    return 0
+  fi
+
+  # ===== Phase 5 Issue #3: Worktree Cache =====
+  # キャッシュライブラリをロード
+  local cache_lib="$(dirname "${BASH_SOURCE[0]}")/worktree-cache.sh"
+  if [[ -f "$cache_lib" ]]; then
+    source "$cache_lib"
+
+    # キャッシュ初期化（初回のみ）
+    if [[ ! -d "$WORKTREE_CACHE_DIR" ]]; then
+      init_worktree_cache
+    fi
+
+    # キャッシュからロードを試行（base_refを含む）
+    if load_from_cache "$ai_name" "$worktree_path" "$base_ref"; then
+      # キャッシュヒット: Git Worktreeとして正しく登録
+      # ブランチを作成/リセット
+      if git show-ref --verify --quiet "refs/heads/$branch_name"; then
+        git branch -f "$branch_name" "$base_ref" >/dev/null 2>&1 || true
+      else
+        git branch "$branch_name" "$base_ref" >/dev/null 2>&1 || true
+      fi
+
+      # Git Worktreeとして登録（git worktree addを再実行）
+      # キャッシュからコピーしたディレクトリをGit Worktreeとして認識させる
+      cd "$worktree_path"
+      if ! git worktree list | grep -q "$worktree_path"; then
+        # Worktreeが登録されていない場合は、git worktree addで再登録
+        # 既存のディレクトリがある場合は削除してから再作成
+        local temp_path="${worktree_path}.tmp"
+        mv "$worktree_path" "$temp_path" 2>/dev/null || true
+        if git worktree add "$worktree_path" "$branch_name" >/dev/null 2>&1; then
+          # キャッシュの内容をコピー
+          rsync -a --exclude='.git' "$temp_path/" "$worktree_path/" 2>/dev/null || true
+          rm -rf "$temp_path"
+        else
+          # 失敗した場合は元に戻す
+          mv "$temp_path" "$worktree_path" 2>/dev/null || true
+        fi
+      fi
+
+      # 状態を保存
+      save_worktree_state "$ai_name" "active"
+
+      # Phase 5 Issue #4: メトリクス記録（キャッシュヒット）
+      local create_end_time=$(date +%s.%N 2>/dev/null || date +%s)
+      local create_duration=$(echo "$create_end_time - $create_start_time" | bc -l 2>/dev/null || echo "0")
+      if command -v record_worktree_create &>/dev/null; then
+        record_worktree_create "$ai_name" "$create_duration" "success" 2>/dev/null || true
+        record_cache_hit "$ai_name" 2>/dev/null || true
+      fi
+
+      vibe_log "worktree-lifecycle" "cache_hit" \
+        "{\"ai\":\"$ai_name\",\"path\":\"$worktree_path\",\"cached\":true}" \
+        "Worktree created from cache for $ai_name at $worktree_path" \
+        "[]" "worktree-core"
+
+      echo "$worktree_path"
+      return 0
+    else
+      # キャッシュミス: 通常フローで作成
+      vibe_log "worktree-lifecycle" "cache_miss" \
+        "{\"ai\":\"$ai_name\",\"path\":\"$worktree_path\"}" \
+        "Cache miss, creating new worktree" "[]" "worktree-core"
+    fi
+  fi
+  # ===== END: Worktree Cache =====
 
   # 🔒 P0 SECURITY: flockによる競合状態保護
   (
     flock -x 200 || {
-      error_wt401_lock_failed
+      echo "ERROR: ロックを取得できませんでした" >&2
       return 1
     }
 
     save_worktree_state "$ai_name" "creating"
-    
-    local metadata
-    metadata=$(jq -n \
-      --arg branch "$branch_name" \
-      --arg worktree "$worktree_path" \
-      '{branch: $branch, worktree: $worktree}')
-    update_worktree_state "$ai_name" "creating" "$metadata"
 
-    # 🔒 P0 SECURITY: --detachで分離ブランチを作成
-    if ! git worktree add --detach "$worktree_path" 2>&1 | tee /tmp/worktree-create.log; then
-      local git_error=$(tail -1 /tmp/worktree-create.log)
-      error_wt101_creation_failed "$ai_name" "$git_error"
+    # Phase 5: base_ref対応（worktree-manager.sh互換）
+    # ブランチを事前作成/リセット（既存の場合はリセット）
+    if git show-ref --verify --quiet "refs/heads/$branch_name"; then
+      git branch -f "$branch_name" "$base_ref" >/dev/null 2>&1 || true
+    else
+      git branch "$branch_name" "$base_ref" >/dev/null 2>&1 || true
+    fi
+
+    # Worktree作成（既存ブランチを使用）
+    if ! git worktree add "$worktree_path" "$branch_name" > /tmp/worktree-create.log 2>&1; then
+      # Phase 5 Issue #4: メトリクス記録（エラー）
+      local create_end_time=$(date +%s.%N 2>/dev/null || date +%s)
+      local create_duration=$(echo "$create_end_time - $create_start_time" | bc -l 2>/dev/null || echo "0")
+      local error_type="git_error"
+      if grep -q "lock" /tmp/worktree-create.log 2>/dev/null; then
+        error_type="lock_failed"
+      fi
+      if command -v record_worktree_create &>/dev/null; then
+        record_worktree_create "$ai_name" "$create_duration" "error" "$error_type" 2>/dev/null || true
+      fi
+      
+      echo "ERROR: $ai_nameのワークツリー作成に失敗" >&2
       save_worktree_state "$ai_name" "error"
-      update_worktree_state "$ai_name" "error" "$metadata"
       return 1
     fi
 
     # 🔒 P0 SECURITY: ディレクトリ権限の設定（所有者のみ）
     chmod 700 "$worktree_path"
 
-    # ワークツリー内に分離ブランチを作成
+    # 🔒 P0 SECURITY: シークレットを除外するsparse-checkoutを設定
     (
       cd "$worktree_path"
-      git checkout -b "$branch_name"
-
-      # 🔒 P0 SECURITY: シークレットを除外するsparse-checkoutを設定
       if git sparse-checkout --help &>/dev/null; then
         git sparse-checkout init --cone
         git sparse-checkout set '/*' '!.env' '!*.key' '!*.pem' '!credentials.json'
@@ -299,7 +403,14 @@ create_worktree() {
     )
 
     save_worktree_state "$ai_name" "active"
-    update_worktree_state "$ai_name" "active" "$metadata"
+
+    # Phase 5 Issue #4: メトリクス記録（成功）
+    local create_end_time=$(date +%s.%N 2>/dev/null || date +%s)
+    local create_duration=$(echo "$create_end_time - $create_start_time" | bc -l 2>/dev/null || echo "0")
+    if command -v record_worktree_create &>/dev/null; then
+      record_worktree_create "$ai_name" "$create_duration" "success" 2>/dev/null || true
+      record_cache_miss "$ai_name" 2>/dev/null || true
+    fi
 
     vibe_log "worktree-lifecycle" "create" \
       "{\"ai\":\"$ai_name\",\"path\":\"$worktree_path\",\"branch\":\"$branch_name\"}" \
@@ -307,10 +418,13 @@ create_worktree() {
       "[\"verify-permissions\",\"test-isolation\"]" \
       "worktree-core"
 
-    # Phase 2.1.3: メトリクス収集フック
-    if command -v metrics_hook_worktree_created >/dev/null 2>&1; then
-        metrics_hook_worktree_created "$ai_name" "$worktree_path"
+    # ===== Phase 5 Issue #3: Worktree Cache - Save =====
+    # Worktree作成成功後、キャッシュに保存
+    if [[ -f "$(dirname "${BASH_SOURCE[0]}")/worktree-cache.sh" ]]; then
+      source "$(dirname "${BASH_SOURCE[0]}")/worktree-cache.sh"
+      save_to_cache "$ai_name" "$worktree_path" "$base_ref" || true  # 失敗してもWorktree作成は成功
     fi
+    # ===== END: Worktree Cache - Save =====
 
     echo "$worktree_path"
 
@@ -401,9 +515,8 @@ create_all_worktrees() {
   # ベースディレクトリを作成
   mkdir -p "$WORKTREE_BASE_DIR"
 
-  # 並列作成（並列度制御）
-  # xargs -Pを使用して並列度を制御
-  local pending_list=()
+  # 並列作成
+  local pids=()
   for ai_name in "${ai_list[@]}"; do
     # 既に存在する場合はスキップ（冪等性）
     if [[ "$(get_worktree_state "$ai_name")" == "active" ]]; then
@@ -411,26 +524,21 @@ create_all_worktrees() {
       created+=("$ai_name")
       continue
     fi
-    pending_list+=("$ai_name")
+
+    create_worktree "$ai_name" &
+    pids+=($!)
   done
 
-  # 並列作成実行（xargs -Pで並列度制御）
+  # すべてのバックグラウンドジョブを待機
   local exit_code=0
-  if [[ ${#pending_list[@]} -gt 0 ]]; then
-    # ログ出力
-    echo "Worktree並列作成開始: ${#pending_list[@]}個（並列度: ${MAX_PARALLEL_WORKTREES}）"
-    
-    # xargsを使用した並列作成
-    # -P: 並列度、-I: 置換文字列、-r: 空入力時に実行しない
-    if printf '%s\n' "${pending_list[@]}" | \
-       xargs -P "$MAX_PARALLEL_WORKTREES" -I {} bash -c \
-         'source "'"$SCRIPT_DIR"'/worktree-core.sh" && create_worktree "{}"'; then
-      created+=("${pending_list[@]}")
+  for pid in "${pids[@]}"; do
+    if wait "$pid"; then
+      created+=("dummy")  # 成功カウント
     else
-      exit_code=$?
-      failed+=("${pending_list[@]}")
+      failed+=("dummy")  # 失敗カウント
+      exit_code=1
     fi
-  fi
+  done
 
   vibe_pipeline_done "create-all-worktrees" \
     "$([[ $exit_code -eq 0 ]] && echo 'success' || echo 'partial')" \
@@ -526,20 +634,20 @@ verify_worktree() {
 
   # 存在チェック
   if [[ ! -d "$worktree_path" ]]; then
-    error_wt301_not_exists "$worktree_path"
+    echo "ERROR: ワークツリーが存在しません: $worktree_path" >&2
     return 1
   fi
 
   # Gitインジケーターの存在チェック（ワークツリーではファイル、通常リポジトリではディレクトリ）
   if [[ ! -e "$git_indicator" && ! -L "$git_indicator" ]]; then
-    error_wt302_invalid_worktree "$worktree_path"
+    echo "ERROR: 有効なGitワークツリーではありません: $worktree_path/.gitが存在しません" >&2
     return 1
   fi
 
   # ワークツリー固有の検証（.gitファイルの内容確認）
   if [[ -f "$git_indicator" ]]; then
     if ! grep -q "^gitdir:" "$git_indicator" 2>/dev/null; then
-      error_wt302_invalid_worktree "$worktree_path"
+      echo "ERROR: 不正な.gitファイル形式（gitdir:行が存在しません）: $git_indicator" >&2
       return 1
     fi
   fi
@@ -555,80 +663,43 @@ verify_worktree() {
 }
 
 # ========================================
-# 並列Worktree作成関数（Phase 1.3.2実装）
+# Phase 5: テスト用ヘルパー関数
 # ========================================
 
 ##
-# 複数のAI用Worktreeを並列作成
+# テスト用ワークツリー作成ヘルパー
+#
+# タスク説明を自動的にブランチ名に変換し、ユニークIDを付与します。
+# E2Eテストでの使用を想定した簡易ラッパー関数です。
 #
 # 引数:
-#   $@ - AI名のリスト（claude gemini amp qwen droid codex cursor）
+#   $1 - AI名（claude|gemini|amp|qwen|droid|codex|cursor）
+#   $2 - タスク説明またはブランチ名
+#   $3 - ベースリファレンス（オプション、デフォルト: HEAD）
 #
 # 戻り値:
-#   0 - 全て成功
-#   1 - 一部または全て失敗
+#   0 - 成功（worktreeパスを標準出力に出力）
+#   1 - 失敗
 #
 # 環境変数:
-#   MAX_PARALLEL_WORKTREES - 並列度（デフォルト: 4）
+#   TEST_RUN_ID - テスト実行ID（未設定の場合はプロセスIDを使用）
 #
 # 例:
-#   create_worktrees_parallel claude gemini amp qwen
-#   create_worktrees_parallel "${ALL_AIS[@]}"
+#   create_test_worktree "qwen" "implement authentication"
+#   create_test_worktree "claude" "feature/user-auth" "develop"
 ##
-create_worktrees_parallel() {
-  local ais=("$@")
-  local parallelism="${MAX_PARALLEL_WORKTREES:-4}"
+create_test_worktree() {
+    local ai_name="$1"
+    local task_description="$2"
+    local base_ref="${3:-HEAD}"
+    local test_id="${TEST_RUN_ID:-$$}"
 
-  if [[ ${#ais[@]} -eq 0 ]]; then
-    error_wt901_missing_ai_names
-    return 1
-  fi
+    # タスク説明をブランチ名に変換
+    local branch_name=$(echo "$task_description" | sed 's/[^a-zA-Z0-9_\/-]/-/g' | sed 's/--*/-/g')
+    branch_name="${branch_name}-test-${test_id}"
 
-  vibe_log "worktree-parallel" "start" \
-    "{\"ais\":[\"${ais[*]}\"],\"parallelism\":$parallelism}" \
-    "並列Worktree作成開始（並列度: $parallelism）" \
-    "[\"create\"]" \
-    "worktree-parallel"
-
-  local failed=0
-  local timestamp=$(date +%Y%m%d-%H%M%S)
-
-  # xargs -Pで並列実行
-  # 各AIに対してcreate_worktreeを並列呼び出し
-  printf "%s\n" "${ais[@]}" | xargs -P "$parallelism" -I {} bash -c "
-    # worktree-core.shを再ソース（サブプロセス内）
-    source '$SCRIPT_DIR/../../../bin/vibe-logger-lib.sh'
-    source '${BASH_SOURCE[0]}'
-
-    ai_name=\"{}\"
-    branch_name=\"worktree/\${ai_name}/$timestamp\"
-
-    if create_worktree \"\$ai_name\" \"\$branch_name\" 2>&1; then
-      echo \"SUCCESS: \$ai_name\"
-      exit 0
-    else
-      echo \"FAILED: \$ai_name\" >&2
-      exit 1
-    fi
-  " || failed=$?
-
-  if [[ $failed -ne 0 ]]; then
-    error_wt501_parallel_partial_failure "${ais[*]}" "$failed"
-    vibe_log "worktree-parallel" "partial-failure" \
-      "{\"ais\":[\"${ais[*]}\"],\"exit_code\":$failed}" \
-      "並列Worktree作成で一部失敗" \
-      "[\"retry\"]" \
-      "worktree-parallel"
-    return 1
-  fi
-
-  vibe_log "worktree-parallel" "success" \
-    "{\"ais\":[\"${ais[*]}\"],\"count\":${#ais[@]}}" \
-    "並列Worktree作成完了（${#ais[@]}個）" \
-    "[]" \
-    "worktree-parallel"
-
-  return 0
+    # create_worktreeを呼び出し（task_id付き）
+    create_worktree "$ai_name" "$branch_name" "test-${test_id}" "$base_ref"
 }
 
 # スクリプトとして直接実行された場合のテスト

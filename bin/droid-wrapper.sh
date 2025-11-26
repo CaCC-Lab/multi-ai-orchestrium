@@ -79,14 +79,16 @@ fi
 
 TASK=""
 QUALITY="high"
+PROMPT_FILE=""
 
 # Parse Droid-specific arguments first
 TEMP_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --task)    shift; TASK="${1:-}"; shift || true; continue;;
-    --quality) shift; QUALITY="${1:-high}"; shift || true; continue;;
-    *)         TEMP_ARGS+=("$1"); shift || true; continue;;
+    --task)        shift; TASK="${1:-}"; shift || true; continue;;
+    --quality)     shift; QUALITY="${1:-high}"; shift || true; continue;;
+    --prompt-file) shift; PROMPT_FILE="${1:-}"; shift || true; continue;;
+    *)             TEMP_ARGS+=("$1"); shift || true; continue;;
   esac
 done
 
@@ -172,11 +174,47 @@ run_droid() {
     vibe_wrapper_done "Droid" "success" "$duration" "0"
   fi
 
-  # Build full command with quality argument
-  local full_command=("${AI_COMMAND[@]}" "$final_quality" "$task")
+  # Check if --prompt-file option was provided
+  if [[ -n "$PROMPT_FILE" ]]; then
+    # Use Droid CLI's --file option (NOT --prompt-file)
+    echo "ℹ️  [droid] Using file-based input (--file $PROMPT_FILE)" >&2
 
-  # Apply timeout using common function
-  wrapper_apply_timeout "$final_timeout" "${full_command[@]}"
+    # Build command: droid exec --auto <quality> --file <path>
+    local full_command=("${AI_COMMAND[@]}" "$final_quality" "--file" "$PROMPT_FILE")
+
+    # Apply timeout using common function
+    wrapper_apply_timeout "$final_timeout" "${full_command[@]}"
+  elif [[ "$task" == *$'\n'* ]] || [[ ${#task} -gt 1024 ]]; then
+    # Multi-line or large prompt: Use stdin piping to avoid command injection
+    echo "ℹ️  [droid] Multi-line prompt detected (${#task}B), using stdin piping" >&2
+
+    # Build command without task argument
+    local full_command=("${AI_COMMAND[@]}" "$final_quality")
+
+    # Apply timeout with stdin piping
+    if [[ "${WRAPPER_SKIP_TIMEOUT:-}" == "1" ]]; then
+      # Called from workflow - no wrapper timeout
+      echo "$task" | wrapper_apply_timeout "$final_timeout" "${full_command[@]}"
+    else
+      # Standalone execution - apply timeout
+      echo "$task" | timeout "$final_timeout" "${full_command[@]}"
+    fi
+  else
+    # Single-line simple prompt: Use stdin piping to avoid command injection
+    echo "ℹ️  [droid] Simple prompt (${#task}B), using stdin piping" >&2
+
+    # Build command without task argument
+    local full_command=("${AI_COMMAND[@]}" "$final_quality")
+
+    # Apply timeout with stdin piping
+    if [[ "${WRAPPER_SKIP_TIMEOUT:-}" == "1" ]]; then
+      # Called from workflow - no wrapper timeout
+      echo "$task" | wrapper_apply_timeout "$final_timeout" "${full_command[@]}"
+    else
+      # Standalone execution - apply timeout
+      echo "$task" | timeout "$final_timeout" "${full_command[@]}"
+    fi
+  fi
 }
 
 # ============================================================================
@@ -193,11 +231,16 @@ if wrapper_handle_stdin; then
     TASK="$INPUT"
 fi
 
-# Validate we have a task
-if [[ -z "$TASK" ]]; then
-    echo "No input provided (stdin empty and no --task)" >&2
+# Validate we have a task or prompt file
+if [[ -z "$TASK" ]] && [[ -z "$PROMPT_FILE" ]]; then
+    echo "No input provided (stdin empty, no --task, and no --prompt-file)" >&2
     exit 1
 fi
 
 # Run Droid with quality-aware logic
-run_droid "$TASK"
+# Pass empty task if using prompt file (run_droid checks PROMPT_FILE first)
+if [[ -n "$PROMPT_FILE" ]]; then
+    run_droid ""
+else
+    run_droid "$TASK"
+fi

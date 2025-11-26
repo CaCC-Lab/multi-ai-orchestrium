@@ -4,24 +4,24 @@ set -euo pipefail
 # 既定は安全に `amp -x "<context>"` を実行
 
 # ============================================================================
-# FREE TIER SUPPORT - Ampの無料モード設定
+# TIER CONFIGURATION - Ampティア設定
 # ============================================================================
-# Ampの無料プランを強制的に使用するための環境変数設定
-# これによりクレジット不足エラーを回避できます
+# 有料アカウント用のデフォルト設定（バランスがある場合）
+# 無料プランを使用する場合: export AMP_MODE=free AMP_TIER=free
 
-# 方法1: 無料モード環境変数（Ampが対応している場合）
-export AMP_MODE="${AMP_MODE:-free}"
-export AMP_TIER="${AMP_TIER:-free}"
+# 有料プラン環境変数（デフォルト: 有料アカウント使用）
+export AMP_MODE="${AMP_MODE:-pro}"
+export AMP_TIER="${AMP_TIER:-paid}"
 
-# 方法2: リクエスト制限を設定（無料プラン相当）
-export AMP_MAX_REQUESTS="${AMP_MAX_REQUESTS:-10}"  # 1日の最大リクエスト数
+# リクエスト制限（有料プランは制限なし、無料プランの場合は10に設定）
+export AMP_MAX_REQUESTS="${AMP_MAX_REQUESTS:-1000}"  # 有料プランのデフォルト上限
 
 # 方法3: 無料プラン用のAPI URLを使用（もし存在すれば）
 # export AMP_URL="${AMP_URL:-https://ampcode.com/free}"
 
-# デバッグ: 無料モード設定を確認
+# デバッグ: ティア設定を確認
 if [[ "${AMP_DEBUG:-}" == "1" ]]; then
-  echo "[DEBUG] Amp Free Tier Settings:" >&2
+  echo "[DEBUG] Amp Tier Settings:" >&2
   echo "  AMP_MODE=$AMP_MODE" >&2
   echo "  AMP_TIER=$AMP_TIER" >&2
   echo "  AMP_MAX_REQUESTS=$AMP_MAX_REQUESTS" >&2
@@ -67,7 +67,7 @@ wrapper_load_dependencies
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     cat <<'USAGE'
-amp-wrapper.sh - MCP wrapper for Amp CLI with Free Tier Support
+amp-wrapper.sh - MCP wrapper for Amp CLI
 Usage:
   amp-wrapper.sh --prompt "project context"
   echo "project context" | amp-wrapper.sh --stdin
@@ -84,31 +84,31 @@ Options:
 
 Env:
   AMP_MCP_TIMEOUT    : e.g. 600s (default 60s), customizable timeout
-  AMP_MODE           : free (default), pro, enterprise - force tier
-  AMP_TIER           : free (default), paid - alternative tier setting
-  AMP_MAX_REQUESTS   : 10 (default) - max requests per day for free tier
+  AMP_MODE           : pro (default), free, enterprise - force tier
+  AMP_TIER           : paid (default), free - alternative tier setting
+  AMP_MAX_REQUESTS   : 1000 (default) - max requests for paid tier
   AMP_DEBUG          : 1 - show debug information including tier settings
 
-Free Tier Support:
-  This wrapper automatically configures Amp for free tier usage to avoid
-  "Insufficient credit balance" errors. The following settings are applied:
-  - AMP_MODE=free
-  - AMP_TIER=free
-  - AMP_MAX_REQUESTS=10
+Tier Configuration:
+  This wrapper uses paid tier by default (suitable for accounts with balance).
+  The following settings are applied:
+  - AMP_MODE=pro
+  - AMP_TIER=paid
+  - AMP_MAX_REQUESTS=1000
 
-  To override and use paid features:
-    export AMP_MODE=pro
-    export AMP_TIER=paid
+  To use free tier instead:
+    export AMP_MODE=free
+    export AMP_TIER=free
 
 Examples:
-  # Basic usage (free tier)
+  # Basic usage (paid tier, default)
   amp-wrapper.sh --prompt "Analyze project structure"
 
-  # Debug mode to verify free tier settings
+  # Debug mode to verify tier settings
   AMP_DEBUG=1 amp-wrapper.sh --prompt "Quick task"
 
-  # Override to use paid tier
-  AMP_MODE=pro amp-wrapper.sh --prompt "Complex analysis"
+  # Override to use free tier
+  AMP_MODE=free amp-wrapper.sh --prompt "Simple analysis"
 USAGE
     exit 0
 fi
@@ -124,7 +124,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --prompt)          shift; PROMPT="${1:-}";;
     --context)         shift; CONTEXT_ARG="${1:-}";;  # Handle --context
-    --stdin)           : ;;  # Flag only, no value
+    --stdin)           STDIN_REQUESTED=true;;  # Flag to enable stdin reading
     --non-interactive) NON_INTERACTIVE=true;;
     --workspace)       shift; WORKSPACE="${1:-}";;
     --raw)             shift; RAW+=("$@"); break;;
@@ -166,8 +166,8 @@ if [[ -z "$PROMPT" ]]; then
     exit 1
 fi
 
-# Log free tier status before execution
-echo "[🆓 Free Tier] Mode: $AMP_MODE, Tier: $AMP_TIER" >&2
+# Log tier status before execution
+echo "[💳 Tier] Mode: $AMP_MODE, Tier: $AMP_TIER" >&2
 
 # Run AI with common wrapper logic
 wrapper_run_ai "$AI_NAME" "$PROMPT" "$BASE_TIMEOUT" "${AI_COMMAND[@]}"

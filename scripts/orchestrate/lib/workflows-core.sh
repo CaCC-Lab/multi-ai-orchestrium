@@ -20,22 +20,53 @@
 set -euo pipefail
 
 # ============================================================================
+# Core Dependencies (Load First)
+# ============================================================================
+
+# CRITICAL: Load multi-ai-core.sh BEFORE any log function usage
+# Provides: log_info, log_warning, log_error, log_success, color variables
+SCRIPT_DIR="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+
+if ! declare -f log_info > /dev/null 2>&1; then
+    source "$SCRIPT_DIR/multi-ai-core.sh" 2>/dev/null || {
+        echo "ERROR: multi-ai-core.sh not found" >&2
+        return 1
+    }
+fi
+
+# ============================================================================
 # Feature Flags & Dependencies
 # ============================================================================
 
-# Git Worktrees統合フラグ（フェーズ2）
+# Git Worktrees統合フラグ（Day 3実装）
 ENABLE_WORKTREES="${ENABLE_WORKTREES:-false}"
+WORKTREE_SHADOW_MODE="${WORKTREE_SHADOW_MODE:-false}"
+WORKTREE_ENABLED_AIS="${WORKTREE_ENABLED_AIS:-claude,gemini,amp,qwen,droid,codex,cursor}"
 
 # ワークツリーモジュールのロード
-if [[ "$ENABLE_WORKTREES" == "true" ]]; then
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    source "$SCRIPT_DIR/worktree-core.sh"
-    source "$SCRIPT_DIR/worktree-execution.sh"
-    source "$SCRIPT_DIR/worktree-merge.sh"
-    source "$SCRIPT_DIR/worktree-cleanup.sh"
-    source "$SCRIPT_DIR/worktree-history.sh"  # Phase 2.1.2: 実行履歴追跡
-    log_info "✓ Git Worktrees統合モード有効（履歴追跡含む）"
+if [[ "$ENABLE_WORKTREES" == "true" || "$WORKTREE_SHADOW_MODE" == "true" ]]; then
+    source "$SCRIPT_DIR/worktree-manager.sh" 2>/dev/null || {
+        log_warning "worktree-manager.sh not found, Worktrees disabled"
+        ENABLE_WORKTREES=false
+    }
+    source "$SCRIPT_DIR/worktree-parallel.sh" 2>/dev/null || {
+        log_warning "worktree-parallel.sh not found, parallel optimization disabled"
+    }
+
+    if [[ "$WORKTREE_SHADOW_MODE" == "true" ]]; then
+        log_info "✓ Git Worktrees: Shadow Mode (logging only)"
+    elif [[ "$ENABLE_WORKTREES" == "true" ]]; then
+        log_info "✓ Git Worktrees: Enabled for [$WORKTREE_ENABLED_AIS]"
+    fi
 fi
+
+# AsyncThink Phase 2: JOIN待機ポリシー & リソース管理
+source "$SCRIPT_DIR/lib/join-policy.sh" 2>/dev/null || log_warning "JOIN Policy library not found"
+source "$SCRIPT_DIR/lib/resource-limiter.sh" 2>/dev/null || log_warning "Resource Limiter library not found"
+
+# JOIN待機ポリシー設定（eager | lazy | hybrid）
+JOIN_POLICY="${JOIN_POLICY:-hybrid}"
+log_info "✓ JOIN Policy: $JOIN_POLICY"
 
 # ============================================================================
 # Core Workflows (5 functions)
@@ -43,6 +74,129 @@ fi
 
 # Multi-AI Full Orchestrate (5-8分) - Balanced Multi-AI workflow
 # P2-1 & P2-2: YAML-driven with parallel execution
+# AsyncThink v4.0 Canary: Simple Fork-Join Workflow
+# Fork-Join基本パターン（Qwen + Droid並列実行）
+multi-ai-simple-fork-join() {
+    local task="$*"
+
+    # P1-1: Input sanitization
+    task=$(sanitize_input "$task") || return 1
+
+    # M-1修正: セキュアな一時ファイル生成（mktemp + chmod 600）
+    local temp_file_qwen
+    local temp_file_droid
+    temp_file_qwen=$(mktemp /tmp/fork-1-qwen-XXXXXX) || {
+        log_error "Failed to create secure temp file for Qwen"
+        return 1
+    }
+    temp_file_droid=$(mktemp /tmp/fork-2-droid-XXXXXX) || {
+        log_error "Failed to create secure temp file for Droid"
+        rm -f "$temp_file_qwen"
+        return 1
+    }
+
+    # M-1修正: パーミッション設定（所有者のみ読み書き）
+    chmod 600 "$temp_file_qwen" || {
+        log_error "Failed to set permissions on Qwen temp file"
+        rm -f "$temp_file_qwen" "$temp_file_droid"
+        return 1
+    }
+    chmod 600 "$temp_file_droid" || {
+        log_error "Failed to set permissions on Droid temp file"
+        rm -f "$temp_file_qwen" "$temp_file_droid"
+        return 1
+    }
+
+    # M-1修正: 自動クリーンアップ（EXIT/INT/TERMシグナル時）
+    # set -u対策: 変数未定義時のエラーを回避
+    trap 'rm -f "${temp_file_qwen:-}" "${temp_file_droid:-}"' EXIT INT TERM
+
+    show_multi_ai_banner
+    log_info "Task: $task"
+    log_info "Profile: simple-fork-join (AsyncThink v4.0 Canary)"
+    log_info "Mode: Fork-Join parallel execution (2 workers)"
+    echo ""
+
+    # DAG可視化
+    log_info "📊 Visualizing Fork-Join DAG structure..."
+    bash "$SCRIPT_DIR/lib/fork-join-visualizer.sh" \
+        "$PROJECT_ROOT/config/multi-ai-profiles.yaml" \
+        "simple-fork-join" || true
+    echo ""
+
+    # Phase 2では完全なFork-Join実行エンジンを使用
+    # 現在は基本的な並列実行でシミュレート
+    log_info "🔀 Starting Fork-Join execution (simulated)..."
+    echo ""
+
+    # FORK-1: Qwen高速プロトタイプ（並列実行）
+    log_phase_start "FORK-1: Qwen - Fast Prototype" "qwen"
+    local qwen_start=$(date +%s)
+    local qwen_output=""
+    (
+        qwen_output=$(call_ai "qwen" "Task: $task\n\nRole: 高速プロトタイプ実装\nTimeout: 300秒" 300 2>&1)
+        echo "$qwen_output" > "$temp_file_qwen"
+    ) &
+    local qwen_pid=$!
+
+    # FORK-2: Droidエンタープライズ実装（並列実行）
+    log_phase_start "FORK-2: Droid - Enterprise Implementation" "droid"
+    local droid_start=$(date +%s)
+    local droid_output=""
+    (
+        droid_output=$(call_ai "droid" "Task: $task\n\nRole: エンタープライズ品質実装\nTimeout: 900秒" 900 2>&1)
+        echo "$droid_output" > "$temp_file_droid"
+    ) &
+    local droid_pid=$!
+
+    log_info "⏳ Parallel execution started (PIDs: qwen=$qwen_pid, droid=$droid_pid)"
+    echo ""
+
+    # JOIN待機ポリシー選択（Phase 2, Week 15-16）
+    case "$JOIN_POLICY" in
+        eager)
+            join_policy_eager $qwen_pid $droid_pid "$temp_file_qwen" "$temp_file_droid" $qwen_start $droid_start
+            local join_exit=$?
+            ;;
+        lazy)
+            join_policy_lazy $qwen_pid $droid_pid "$temp_file_qwen" "$temp_file_droid" $qwen_start $droid_start
+            local join_exit=$?
+            ;;
+        hybrid)
+            join_policy_hybrid $qwen_pid $droid_pid "$temp_file_qwen" "$temp_file_droid" $qwen_start $droid_start 300
+            local join_exit=$?
+            ;;
+        *)
+            log_error "Unknown JOIN_POLICY: $JOIN_POLICY"
+            return 1
+            ;;
+    esac
+
+    echo ""
+
+    # 結果読み込み
+    local qwen_output=""
+    local droid_output=""
+    [[ -f "$temp_file_qwen" ]] && qwen_output=$(cat "$temp_file_qwen")
+    [[ -f "$temp_file_droid" ]] && droid_output=$(cat "$temp_file_droid")
+
+    # 成功判定
+    if [[ $join_exit -eq 0 ]]; then
+        log_info "✅ Simple Fork-Join workflow completed successfully"
+        echo ""
+        log_info "📝 Combined results:"
+        echo "=== Qwen (Fast Prototype) ==="
+        echo "$qwen_output"
+        echo ""
+        echo "=== Droid (Enterprise Implementation) ==="
+        echo "$droid_output"
+        return 0
+    else
+        log_error "❌ Simple Fork-Join workflow failed (exit code: $join_exit)"
+        return 1
+    fi
+}
+
 multi-ai-full-orchestrate() {
     local task="$*"
 
@@ -55,44 +209,8 @@ multi-ai-full-orchestrate() {
     log_info "Mode: YAML-driven with parallel execution"
     echo ""
 
-    # Phase 2.1.2: 実行履歴記録開始
-    local workflow_id="multi-ai-full-orchestrate-$(date +%s)-$$"
-    local start_time=$(date +%s)
-    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
-        local ais_json='["claude","gemini","qwen","amp","droid","codex","cursor"]'
-        record_worktree_execution_start "$workflow_id" "$task" "$ais_json"
-    fi
-
-    # Worktree trap設定（異常終了時の自動クリーンアップ）
-    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
-        setup_worktree_cleanup_trap
-    fi
-
     # P2-1 & P2-2: Execute workflow using YAML configuration
     execute_yaml_workflow "$DEFAULT_PROFILE" "multi-ai-full-orchestrate" "$task"
-    local result=$?
-
-    # クリーンアップ（ワークツリーモードの場合）
-    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
-        teardown_worktree_cleanup_trap  # trap解除（正常終了時）
-        cleanup_all_worktrees || log_warning "Worktree cleanup had issues"
-    fi
-
-    # Phase 2.1.2: 実行履歴記録終了
-    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
-        local end_time=$(date +%s)
-        local duration=$((end_time - start_time))
-        local status="success"
-        [[ $result -ne 0 ]] && status="failure"
-        
-        # メトリクス収集
-        local worktrees_created=$(query_worktree_state "$(date +%Y%m%d)" "" "active" 2>/dev/null | wc -l || echo "0")
-        local metrics_json="{\"worktrees_created\":$worktrees_created,\"errors\":$result}"
-        
-        record_worktree_execution_end "$workflow_id" "$status" "$duration" "$metrics_json"
-    fi
-
-    return $result
 }
 
 # Multi-AI Speed Prototype (2-4分)
@@ -114,11 +232,6 @@ multi-ai-speed-prototype() {
         log_info "Mode: Legacy並列実行モード"
     fi
     echo ""
-
-    # Worktree trap設定（異常終了時の自動クリーンアップ）
-    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
-        setup_worktree_cleanup_trap
-    fi
 
     # P1-2: Setup work directory
     # P1-2: Setup work directory - persistent logs for audit trail
@@ -387,8 +500,7 @@ EOF
     # クリーンアップ（ワークツリーモードの場合）
     if [[ "$ENABLE_WORKTREES" == "true" ]]; then
         log_info "Cleaning up worktrees..."
-        teardown_worktree_cleanup_trap  # trap解除（正常終了時）
-        cleanup_all_worktrees || log_warning "Worktree cleanup had issues"
+        cleanup_all_worktrees
         log_info "✓ Worktrees cleaned up successfully"
     fi
 }
@@ -408,22 +520,8 @@ multi-ai-enterprise-quality() {
     log_info "Mode: YAML-driven with parallel execution"
     echo ""
 
-    # Worktree trap設定（異常終了時の自動クリーンアップ）
-    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
-        setup_worktree_cleanup_trap
-    fi
-
     # P2-1 & P2-2: Execute workflow using YAML configuration
     execute_yaml_workflow "$DEFAULT_PROFILE" "multi-ai-enterprise-quality" "$task"
-    local result=$?
-
-    # クリーンアップ（ワークツリーモードの場合）
-    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
-        teardown_worktree_cleanup_trap  # trap解除（正常終了時）
-        cleanup_all_worktrees || log_warning "Worktree cleanup had issues"
-    fi
-
-    return $result
 }
 
 # Multi-AI Hybrid Development (推奨)
@@ -440,22 +538,8 @@ multi-ai-hybrid-development() {
     log_info "Mode: YAML-driven with parallel execution (推奨)"
     echo ""
 
-    # Worktree trap設定（異常終了時の自動クリーンアップ）
-    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
-        setup_worktree_cleanup_trap
-    fi
-
     # P2-1 & P2-2: Execute workflow using YAML configuration
     execute_yaml_workflow "$DEFAULT_PROFILE" "multi-ai-hybrid-development" "$task"
-    local result=$?
-
-    # クリーンアップ（ワークツリーモードの場合）
-    if [[ "$ENABLE_WORKTREES" == "true" ]]; then
-        teardown_worktree_cleanup_trap  # trap解除（正常終了時）
-        cleanup_all_worktrees || log_warning "Worktree cleanup had issues"
-    fi
-
-    return $result
 }
 
 # Multi-AI Consensus Review
@@ -556,3 +640,181 @@ multi-ai-collaborative-testing() {
     # P2-1 & P2-2: Execute workflow using YAML configuration
     execute_yaml_workflow "$DEFAULT_PROFILE" "multi-ai-collaborative-testing" "$target"
 }
+
+# ============================================================================
+# Git Worktrees Integration (Day 3)
+# ============================================================================
+
+# Execute AI task with optional Worktree isolation
+#
+# Usage: execute_ai_with_worktree <ai> <task> <worktree_enabled> [branch] [task_id]
+#
+# Args:
+#   ai: AI name (qwen, droid, etc.)
+#   task: Task description
+#   worktree_enabled: "true" | "false"
+#   branch: Optional branch name (default: feature/<ai>-<timestamp>)
+#   task_id: Optional task ID (default: <ai>-<timestamp>)
+#
+# Returns:
+#   0 on success, 1 on failure
+#
+# Example:
+#   execute_ai_with_worktree "qwen" "Implement authentication" "true"
+#
+execute_ai_with_worktree() {
+    local ai="$1"
+    local task="$2"
+    local worktree_enabled="${3:-false}"
+    local branch="${4:-feature/${ai}-$(date +%Y%m%d%H%M%S)}"
+    local task_id="${5:-${ai}-task-$(date +%Y%m%d%H%M%S)}"
+    local timeout="${6:-300}"  # Default 5 minutes
+
+    # Check if AI is in enabled list
+    if [[ "$worktree_enabled" == "true" ]]; then
+        if ! echo ",$WORKTREE_ENABLED_AIS," | grep -q ",${ai},"; then
+            log_warning "Worktree not enabled for $ai, using standard execution"
+            worktree_enabled="false"
+        fi
+    fi
+
+    # Shadow mode: log only, don't create worktrees
+    if [[ "$WORKTREE_SHADOW_MODE" == "true" ]]; then
+        log_info "[Shadow Mode] Would create worktree for $ai: $branch"
+        # Fall through to standard execution
+        worktree_enabled="false"
+    fi
+
+    # Standard execution (no worktree)
+    if [[ "$worktree_enabled" != "true" || "$ENABLE_WORKTREES" != "true" ]]; then
+        log_info "Executing $ai (standard mode)"
+        call_ai "$ai" "$task" "$timeout"
+        return $?
+    fi
+
+    # === Worktree Execution Path ===
+
+    log_info "Executing $ai with Worktree isolation"
+    log_info "  Branch: $branch"
+    log_info "  Task ID: $task_id"
+
+    # Step 1: Create worktree
+    local worktree_path
+    if ! worktree_path=$(create_worktree "$ai" "$branch" "$task_id"); then
+        log_error "Failed to create worktree for $ai"
+        log_warning "Falling back to standard execution"
+        call_ai "$ai" "$task" "$timeout"
+        return $?
+    fi
+
+    log_success "Worktree created: $worktree_path"
+
+    # Step 2: Execute AI in worktree
+    local exit_code=0
+    (
+        cd "$worktree_path" || exit 1
+        export AI_WORKSPACE="$worktree_path"
+        log_info "Working in worktree: $(pwd)"
+
+        # Call AI
+        call_ai "$ai" "$task" "$timeout"
+    ) || exit_code=$?
+
+    # Step 3: Merge worktree (if successful)
+    if [[ $exit_code -eq 0 ]]; then
+        log_info "Merging $ai worktree..."
+        if merge_worktree "$ai" "$task_id"; then
+            log_success "$ai worktree merged successfully"
+        else
+            log_error "Failed to merge $ai worktree"
+            exit_code=1
+        fi
+    else
+        log_error "$ai execution failed in worktree"
+        log_warning "Worktree left intact for debugging: $worktree_path"
+        # Don't auto-cleanup on failure (manual investigation)
+        return $exit_code
+    fi
+
+    # Step 4: Cleanup worktree (on success)
+    if [[ $exit_code -eq 0 ]]; then
+        if cleanup_worktree "$ai" "$task_id" "false"; then
+            log_success "$ai worktree cleaned up"
+        else
+            log_warning "Failed to cleanup $ai worktree (non-fatal)"
+        fi
+    fi
+
+    return $exit_code
+}
+
+# Execute multiple AIs with parallel worktrees
+#
+# Usage: execute_ais_with_worktrees_parallel <ai1> <ai2> ... <aiN> -- <task>
+#
+# Example:
+#   execute_ais_with_worktrees_parallel qwen droid codex -- "Implement authentication"
+#
+execute_ais_with_worktrees_parallel() {
+    local ais=()
+    local task=""
+
+    # Parse arguments (before --)
+    while [[ $# -gt 0 ]]; do
+        if [[ "$1" == "--" ]]; then
+            shift
+            task="$*"
+            break
+        fi
+        ais+=("$1")
+        shift
+    done
+
+    if [[ ${#ais[@]} -eq 0 || -z "$task" ]]; then
+        log_error "Usage: execute_ais_with_worktrees_parallel <ai1> ... -- <task>"
+        return 1
+    fi
+
+    log_info "Parallel worktree execution for ${#ais[@]} AIs"
+
+    # Step 1: Create worktrees in parallel
+    if ! create_worktrees_parallel "${ais[@]}"; then
+        log_error "Failed to create worktrees in parallel"
+        return 1
+    fi
+
+    # Step 2: Execute AIs in parallel (TODO: implement parallel execution)
+    local exit_code=0
+    for ai in "${ais[@]}"; do
+        execute_ai_with_worktree "$ai" "$task" "true" &
+    done
+    wait || exit_code=$?
+
+    # Step 3: Cleanup worktrees in parallel
+    if ! cleanup_worktrees_parallel "${ais[@]}"; then
+        log_warning "Failed to cleanup worktrees in parallel (non-fatal)"
+    fi
+
+    return $exit_code
+}
+
+# Check if worktree is enabled for a specific AI
+#
+# Usage: is_worktree_enabled_for_ai <ai>
+#
+# Returns: 0 if enabled, 1 if disabled
+#
+is_worktree_enabled_for_ai() {
+    local ai="$1"
+
+    if [[ "$ENABLE_WORKTREES" != "true" ]]; then
+        return 1
+    fi
+
+    if echo ",$WORKTREE_ENABLED_AIS," | grep -q ",${ai},"; then
+        return 0
+    else
+        return 1
+    fi
+}
+

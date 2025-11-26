@@ -33,6 +33,7 @@ PROMPT=""
 NON_INTERACTIVE=false
 WORKSPACE=""
 RAW=()
+STDIN_REQUESTED=false
 
 # Set by wrapper_handle_stdin():
 INPUT=""
@@ -114,7 +115,8 @@ wrapper_parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --prompt)          shift; PROMPT="${1:-}";;
-      --stdin)           : ;;  # Flag only, no value
+      --prompt-file)     shift; PROMPT_FILE="${1:-}";;
+      --stdin)           STDIN_REQUESTED=true;;
       --non-interactive) NON_INTERACTIVE=true;;
       --workspace)       shift; WORKSPACE="${1:-}";;
       --raw)             shift; RAW+=("$@"); break;;
@@ -244,9 +246,41 @@ wrapper_run_ai() {
   shift 3
   local ai_command=("$@")
 
+  # Check if --prompt-file was provided (via wrapper_parse_args)
+  if [[ -n "${PROMPT_FILE:-}" ]]; then
+    if [[ -f "$PROMPT_FILE" ]]; then
+      echo "ℹ️  [${ai_name}] Using file-based input (--prompt-file $PROMPT_FILE)" >&2
+      # Read file contents into prompt variable
+      prompt=$(cat "$PROMPT_FILE") || {
+        echo "❌ Error: Failed to read prompt file: $PROMPT_FILE" >&2
+        exit 1
+      }
+    else
+      echo "❌ Error: Prompt file not found: $PROMPT_FILE" >&2
+      exit 1
+    fi
+  fi
+
   local final_timeout="${base_timeout}s"
   local start_time
   start_time=$(get_timestamp_ms 2>/dev/null || echo "$(date +%s)000")
+
+  # Check circuit breaker before proceeding
+  if [[ -f "${SCRIPT_DIR}/../src/core/circuit-breaker.sh" ]]; then
+    source "${SCRIPT_DIR}/../src/core/circuit-breaker.sh" 2>/dev/null || true
+    if command -v circuit_breaker_check >/dev/null 2>&1; then
+      if ! circuit_breaker_check "$ai_name"; then
+        # Circuit breaker is OPEN, log and return error
+        echo "Circuit breaker is OPEN for $ai_name, request blocked" >&2
+        if command -v vibe_log >/dev/null 2>&1; then
+          vibe_log "circuit_breaker" "blocked" \
+            "{\"ai\":\"$ai_name\",\"prompt\":\"${prompt:0:64}...\"}" \
+            "Request blocked by circuit breaker"
+        fi
+        exit 1
+      fi
+    fi
+  fi
 
   # VibeLogger: Wrapper execution start
   if command -v vibe_wrapper_start >/dev/null 2>&1; then
@@ -286,9 +320,25 @@ wrapper_run_ai() {
     vibe_wrapper_done "$ai_name" "success" "$duration" "0"
   fi
 
-  # Apply timeout and execute AI command
-  # Pass prompt via stdin to handle large prompts (>ARG_MAX) and special characters safely
-  printf '%s' "$prompt" | wrapper_apply_timeout "$final_timeout" "${ai_command[@]}"
+  # Use a subshell to execute the command and capture exit code for circuit breaker
+  local exit_code=0
+  printf '%s' "$prompt" | wrapper_apply_timeout "$final_timeout" "${ai_command[@]}" || exit_code=$?
+
+  # Record result in circuit breaker if available
+  if [[ -f "${SCRIPT_DIR}/../src/core/circuit-breaker.sh" ]]; then
+    source "${SCRIPT_DIR}/../src/core/circuit-breaker.sh" 2>/dev/null || true
+    if command -v circuit_breaker_record_success >/dev/null 2>&1 && \
+       command -v circuit_breaker_record_failure >/dev/null 2>&1; then
+      if [[ $exit_code -eq 0 ]]; then
+        circuit_breaker_record_success "$ai_name"
+      else
+        circuit_breaker_record_failure "$ai_name"
+      fi
+    fi
+  fi
+
+  # Exit with the command's exit code
+  exit $exit_code
 }
 
 # ============================================================================
@@ -338,6 +388,17 @@ wrapper_handle_raw_args() {
 # Side effects: Sets global variable INPUT
 
 wrapper_handle_stdin() {
+  # Only attempt to read stdin when explicitly requested
+  if [[ "$STDIN_REQUESTED" != "true" ]]; then
+    return 1
+  fi
+
+  # If stdin is a terminal (no data), immediately report missing input
+  if [[ -t 0 ]]; then
+    echo "No input provided (stdin empty and no --prompt)" >&2
+    return 1
+  fi
+
   read -r -d '' INPUT || true
 
   # Check if input is empty (whitespace-only)

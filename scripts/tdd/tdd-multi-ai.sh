@@ -5,14 +5,15 @@
 
 set -euo pipefail
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[0;33m'
-MAGENTA='\033[0;35m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+# Color variables - define if not already inherited from orchestrate-multi-ai.sh
+# Using := to set only if not already defined (avoids readonly conflicts)
+RED="${RED:-\033[0;31m}"
+GREEN="${GREEN:-\033[0;32m}"
+YELLOW="${YELLOW:-\033[0;33m}"
+BLUE="${BLUE:-\033[0;34m}"
+MAGENTA="${MAGENTA:-\033[0;35m}"
+CYAN="${CYAN:-\033[0;36m}"
+NC="${NC:-\033[0m}"
 
 # Determine script directory and project root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -419,28 +420,37 @@ tdd-multi-ai-cycle() {
     tdd-multi-ai-plan "$feature" || echo "Plan phase completed with warnings"
     echo ""
 
-    read -p "Press Enter to continue to RED phase..." -r
+    # Non-interactive mode support
+    if [[ "${TDD_NON_INTERACTIVE:-${WRAPPER_NON_INTERACTIVE:-}}" != "1" ]]; then
+        read -p "Press Enter to continue to RED phase..." -r
+    fi
 
     # Phase 1: Red
     echo -e "${RED}[1/4] RED Phase${NC}"
     tdd-multi-ai-red "$feature" || { echo "Red phase failed"; return 1; }
     echo ""
 
-    read -p "Press Enter to continue to GREEN phase..." -r
+    if [[ "${TDD_NON_INTERACTIVE:-${WRAPPER_NON_INTERACTIVE:-}}" != "1" ]]; then
+        read -p "Press Enter to continue to GREEN phase..." -r
+    fi
 
     # Phase 2: Green
     echo -e "${GREEN}[2/4] GREEN Phase${NC}"
     tdd-multi-ai-green "$feature" || { echo "Green phase failed"; return 1; }
     echo ""
 
-    read -p "Press Enter to continue to REFACTOR phase..." -r
+    if [[ "${TDD_NON_INTERACTIVE:-${WRAPPER_NON_INTERACTIVE:-}}" != "1" ]]; then
+        read -p "Press Enter to continue to REFACTOR phase..." -r
+    fi
 
     # Phase 3: Refactor
     echo -e "${BLUE}[3/4] REFACTOR Phase${NC}"
     tdd-multi-ai-refactor "Optimize the previous implementation" || echo "Refactor phase completed with warnings"
     echo ""
 
-    read -p "Press Enter to continue to REVIEW phase..." -r
+    if [[ "${TDD_NON_INTERACTIVE:-${WRAPPER_NON_INTERACTIVE:-}}" != "1" ]]; then
+        read -p "Press Enter to continue to REVIEW phase..." -r
+    fi
 
     # Phase 4: Review
     echo -e "${YELLOW}[4/4] REVIEW Phase${NC}"
@@ -524,7 +534,8 @@ pair-multi-ai-driver() {
     fallback_ai=$(get_phase_ai "$profile" "green" "fallback") || fallback_ai="droid"
 
     echo "Fast driver: $primary_ai"
-    invoke_ai "$primary_ai" "Quick prototype for: $task" 120
+    # 注: 複雑なタスク（環境セットアップ、複数ファイル作成等）には300秒が必要
+    invoke_ai "$primary_ai" "Quick prototype for: $task" 300
 
     echo ""
     echo "Production driver: $fallback_ai"
@@ -584,3 +595,18 @@ if [[ -z "${TDD_Multi-AI_QUIET:-}" ]]; then
     echo "Example: TDD_PROFILE=speed_first tdd-multi-ai-cycle 'JWT auth'"
     echo ""
 fi
+
+# ============================================================================
+# Export Functions for External Use
+# ============================================================================
+
+# Export all TDD workflow functions so they can be called from orchestrate-multi-ai.sh
+export -f tdd-multi-ai-plan
+export -f tdd-multi-ai-red
+export -f tdd-multi-ai-green
+export -f tdd-multi-ai-refactor
+export -f tdd-multi-ai-review
+export -f tdd-multi-ai-cycle
+export -f tdd-multi-ai-fast
+export -f pair-multi-ai-driver
+export -f pair-multi-ai-navigator

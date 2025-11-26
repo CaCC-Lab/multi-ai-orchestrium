@@ -54,6 +54,7 @@ export -f multi-ai-consensus-review
 export -f multi-ai-chatdev-develop
 export -f multi-ai-collaborative-planning
 export -f multi-ai-collaborative-testing
+export -f multi-ai-simple-fork-join
 
 # Discussion Workflows
 export -f multi-ai-discuss-before

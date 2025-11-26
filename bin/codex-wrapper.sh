@@ -62,6 +62,14 @@ if [[ -n "$WORKSPACE" ]]; then
 fi
 
 # ============================================================================
+# Python Version Note (2025-11-20: Python 3.9.19 anaconda works correctly)
+# ============================================================================
+# Testing revealed that Python 3.9.19 (anaconda) works correctly with pytest,
+# while Python 3.10.12 causes pytest to hang indefinitely.
+# Therefore, we use the default Python 3.9.19 from anaconda.
+# No override needed - anaconda Python works perfectly.
+
+# ============================================================================
 # Main Execution
 # ============================================================================
 
@@ -75,9 +83,9 @@ if wrapper_handle_stdin; then
     PROMPT="$INPUT"
 fi
 
-# Validate we have a prompt
-if [[ -z "$PROMPT" ]]; then
-    echo "No input provided (stdin empty and no --prompt)" >&2
+# Validate we have a prompt or prompt file
+if [[ -z "$PROMPT" ]] && [[ -z "$PROMPT_FILE" ]]; then
+    echo "No input provided (stdin empty, no --prompt, and no --prompt-file)" >&2
     exit 1
 fi
 

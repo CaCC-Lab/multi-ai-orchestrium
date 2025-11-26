@@ -7,83 +7,9 @@ set -euo pipefail
 # 依存関係をソース
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/worktree-core.sh"
-source "$SCRIPT_DIR/worktree-state.sh"
 
-# ========================================
-# trap設定・解除関数
-# ========================================
-
-##
-# Worktreeクリーンアップ用のtrapを設定
-#
-# 引数:
-#   なし
-#
-# 戻り値:
-#   0 - trap設定成功
-#
-# 動作:
-#   - EXIT/INT/TERMシグナルに対してcleanup_all_worktreesを設定
-#   - ワークフロー開始時に明示的に呼び出す
-#   - sourceした時点では自動設定しない（設計修正）
-#
-# 用途:
-#   - ワークフロー関数の開始時に呼び出し
-#   - 異常終了時の自動クリーンアップ保証
-#
-# セキュリティ:
-#   - データ損失防止のため非強制モードで実行
-#   - ワークフロー完了後は明示的に解除が必要
-#
-# 例:
-#   setup_worktree_cleanup_trap
-#   multi-ai-full-orchestrate "task"
-#   teardown_worktree_cleanup_trap
-##
-setup_worktree_cleanup_trap() {
-  trap cleanup_all_worktrees EXIT INT TERM
-  vibe_log "worktree-trap" "setup" \
-    "{\"signals\":[\"EXIT\",\"INT\",\"TERM\"]}" \
-    "Worktreeクリーンアップtrapを設定" \
-    "[]" \
-    "worktree-trap"
-}
-
-##
-# Worktreeクリーンアップ用のtrapを解除
-#
-# 引数:
-#   なし
-#
-# 戻り値:
-#   0 - trap解除成功
-#
-# 動作:
-#   - EXIT/INT/TERMシグナルのtrapを解除
-#   - ワークフロー正常終了時に明示的に呼び出す
-#   - 次のワークフロー実行に備えてクリーンな状態にする
-#
-# 用途:
-#   - ワークフロー関数の終了時に呼び出し
-#   - 複数ワークフロー連続実行時の干渉防止
-#
-# 注意:
-#   - 解除後は異常終了時のクリーンアップが行われない
-#   - 必要に応じて手動でcleanup_all_worktreesを呼び出す
-#
-# 例:
-#   setup_worktree_cleanup_trap
-#   multi-ai-full-orchestrate "task"
-#   teardown_worktree_cleanup_trap
-##
-teardown_worktree_cleanup_trap() {
-  trap - EXIT INT TERM
-  vibe_log "worktree-trap" "teardown" \
-    "{\"signals\":[\"EXIT\",\"INT\",\"TERM\"]}" \
-    "Worktreeクリーンアップtrapを解除" \
-    "[]" \
-    "worktree-trap"
-}
+# クリーンアップ用のtrapハンドラ
+trap cleanup_all_worktrees EXIT INT TERM
 
 # ========================================
 # クリーンアップ関数
@@ -131,14 +57,6 @@ cleanup_worktree() {
 
   # 状態をクリーニング中に更新
   save_worktree_state "$ai_name" "cleaning"
-  
-  local branch_name=$(cd "$worktree_path" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
-  local metadata
-  metadata=$(jq -n \
-    --arg branch "$branch_name" \
-    --arg worktree "$worktree_path" \
-    '{branch: $branch, worktree: $worktree}')
-  update_worktree_state "$ai_name" "cleaning" "$metadata"
 
   vibe_log "worktree-cleanup" "start" \
     "{\"ai\":\"$ai_name\",\"path\":\"$worktree_path\",\"force\":$force}" \
@@ -146,55 +64,21 @@ cleanup_worktree() {
     "[\"backup-data\"]" \
     "worktree-cleanup"
 
-  # ワークツリーを削除（自動リトライ＆--force適用）
+  # ブランチ名を取得（削除前）
+  local branch_name=$(cd "$worktree_path" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+
+  # ワークツリーを削除
   local exit_code=0
-  local max_retries=3
-  local retry_count=0
-  local force_flag="$force"
-  local removal_output=""
-
-  while [[ $retry_count -lt $max_retries ]]; do
-    # リトライ回数をログ出力
-    if [[ $retry_count -gt 0 ]]; then
-      echo "⟳ Retry $retry_count/$max_retries: Attempting worktree removal..."
-    fi
-
-    # 削除試行
-    if [[ "$force_flag" == "true" ]]; then
-      removal_output=$(git worktree remove "$worktree_path" --force 2>&1)
-      exit_code=$?
-      if [[ $exit_code -eq 0 ]]; then
-        break  # 成功
-      fi
-    else
-      removal_output=$(git worktree remove "$worktree_path" 2>&1)
-      exit_code=$?
-      if [[ $exit_code -eq 0 ]]; then
-        break  # 成功
-      else
-        # 通常削除失敗時は次回から--force適用
-        echo "⚠ Normal removal failed, will use --force on next attempt"
-        force_flag="true"
-      fi
-    fi
-
-    retry_count=$((retry_count + 1))
-
-    if [[ $retry_count -lt $max_retries ]]; then
-      sleep 1  # リトライ前に1秒待機
-    fi
-  done
-
-  if [[ $exit_code -ne 0 ]]; then
-    echo "ERROR: ワークツリー削除に失敗（$max_retries回リトライ後）: $worktree_path" >&2
-    echo "Last error: $removal_output" >&2
-    save_worktree_state "$ai_name" "cleanup-failed"
-    return $exit_code
+  if [[ "$force" == "true" ]]; then
+    git worktree remove "$worktree_path" --force 2>&1 || exit_code=$?
+  else
+    git worktree remove "$worktree_path" 2>&1 || exit_code=$?
   fi
 
-  # 成功時のログ
-  if [[ $retry_count -gt 0 ]]; then
-    echo "✓ Worktree removed after $retry_count retries (force: $force_flag)"
+  if [[ $exit_code -ne 0 ]]; then
+    echo "ERROR: ワークツリー削除に失敗: $worktree_path" >&2
+    save_worktree_state "$ai_name" "cleanup-failed"
+    return $exit_code
   fi
 
   # ブランチを削除（オプション）
@@ -206,7 +90,6 @@ cleanup_worktree() {
 
   # 状態をnoneに更新
   save_worktree_state "$ai_name" "none"
-  update_worktree_state "$ai_name" "none" "{}"
 
   vibe_log "worktree-cleanup" "done" \
     "{\"ai\":\"$ai_name\",\"exit_code\":$exit_code}" \

@@ -6,6 +6,12 @@ version: "3.0"
 default_profile: "balanced-multi-ai"
 
 # P0.3.2.2: Parallel Execution Resource Limiting
+# Phase 3 Implementation (2025-11-08完了):
+#   - Bash Background Jobs方式採用（GNU Parallelから移行）
+#   - 実行時間: 21秒（7AIワークフロー、Phase 2: 164秒から87.2%削減）
+#   - キャッシュヒット: 6秒（100x高速化）
+#   - 並列効率: 100%（理論値と実測値が一致）
+#   - 成功率: 100%（Phase 2: 88%から改善）
 execution:
   max_parallel_jobs: 4
   job_pool:
@@ -17,6 +23,26 @@ execution:
     - Prevents resource exhaustion when running 7AI workflows
     - Example: 7 AI tasks submitted → only 4 run concurrently, 3 queue
     - Adjust based on system resources (CPU cores, memory)
+
+    Phase 3 Performance (AsyncThink Organizer-Worker統合):
+    - 実行時間: 21秒（7AIワークフロー）vs 164秒（Phase 2）→ 87.2%削減
+    - 並列実行: Bash background jobs `( ... ) &` を使用
+      * GNU Parallelから移行（シンプルで堅牢、変数スコープ問題なし）
+      * 関数直接呼び出し（exportや外部wrapperスクリプト不要）
+    - キャッシュヒット時: 6秒（初回: 600秒 → 100x高速化）
+    - 並列効率: 100%（4並列ジョブで理論値通りのスケーリング）
+    - 信頼性: 100%成功率（Phase 2: 88%から+12%改善）
+
+    タイムアウトガイドライン（実測値）:
+    - Claude: 300s (戦略/アーキテクチャ作業)
+    - Gemini: 300-600s (Web検索、セキュリティ分析)
+    - Amp: 600s (PM分析、ドキュメント作成)
+    - Qwen: 300s (高速プロトタイピング)
+    - Droid: 900s (エンタープライズ実装、包括的分析)
+    - Codex: 300s (コードレビュー、最適化)
+    - Cursor: 300-600s (IDE統合、テスト)
+
+    詳細: docs/asyncthink/PHASE3_PERFORMANCE_REPORT.md
 
 # AI Capabilities Reference
 ai_capabilities:
@@ -64,7 +90,58 @@ ai_capabilities:
     performance: "開発者体験最適化"
 
 profiles:
+  # ==================================================
+  # AsyncThink v4.0 Canary Release - Simple Fork-Join
+  # ==================================================
+  simple-fork-join:
+    name: "Simple Fork-Join - 基本パターン (v4.0 Canary)"
+    description: "Qwen + Droid並列実装、JOIN後統合 (AsyncThink統合カナリアリリース)"
+    ai_count: 3
+
+    workflows:
+      prototype-workflow:
+        phases:
+          - name: "Simple Fork-Join Execution"
+            fork_join_enabled: true  # v4.0機能を有効化
+            organizer: claude
+
+            agent_pool:
+              capacity: 2
+              workers: [qwen, droid]
+              allocation_policy: "dynamic"
+
+            fork_join_operations:
+              # FORK-1: Qwen高速プロトタイプ
+              - fork:
+                  id: 1
+                  worker: qwen
+                  role: fast-prototype
+                  task: "認証機能のプロトタイプ実装"
+                  timeout: 300
+                  blocking: false
+
+              # FORK-2: Droidエンタープライズ実装
+              - fork:
+                  id: 2
+                  worker: droid
+                  role: enterprise-implementation
+                  task: "認証機能のエンタープライズ実装"
+                  timeout: 900
+                  blocking: false
+
+              # JOIN-1: Qwen完了待ち
+              - join:
+                  id: 1
+                  blocking: true
+
+              # JOIN-2: Droid完了待ち
+              - join:
+                  id: 2
+                  blocking: true
+
+  # ==================================================
   # Balanced Multi-AI Profile - Default
+  # ==================================================
   balanced-multi-ai:
     name: "Balanced Multi-AI - 全AI活用（速度と品質の両立）"
     description: "Qwen高速プロトタイプ + Droid本番品質 + Codex比較評価（5-8分）"
@@ -92,32 +169,36 @@ profiles:
 
           # Phase 2: 並列実装（Qwen + Droid）
           - name: "Parallel Implementation - Speed vs Quality"
+            depends_on: [0]  # Phase 4 Tier 2 Task 4: Depends on Phase 0 (Strategic Planning)
             parallel:
               - name: "Qwen - Fast Prototype (37s target)"
                 ai: qwen
                 role: fast-prototype
-                timeout: 300  # 実測最適化: 60s→300s (5.0倍, 包括的レビュー対応, commit 02b90bf)
+                timeout: 900  # タイムアウト延長: 300s→900s (Phase 2タイムアウト対策, 2025-11-19)
                 priority: speed
               - name: "Droid - Enterprise Implementation (180s target)"
                 ai: droid
                 role: enterprise-implementation
-                timeout: 900  # 実測最適化: 600s→900s (1.5倍, 大規模タスク対応, commit 121ea29)
+                timeout: 1800  # タイムアウト延長: 900s→1800s (Phase 2タイムアウト対策, 2025-11-19)
                 priority: quality
 
-          # Phase 3: 比較評価と最適化（Codex）
+          # Phase 3: 比較評価と最適化（Droid）【2025-11-20: CodexからDroidに変更 - pytest実行可能性のため】
           - name: "Code Review & Optimization"
-            ai: codex
+            depends_on: [1]  # Phase 4 Tier 2 Task 4: Depends on Phase 1 (Parallel Implementation)
+            ai: droid  # 変更: codex → droid (pytest実行可能、エンタープライズ品質基準でレビュー)
             role: compare-optimize
-            input_from: ["qwen", "droid"]
-            timeout: 300  # 実測最適化: 120s→300s (2.5倍, Qwen+Droid比較対応, commit 4fde5e4)
+            input_from: ["qwen"]  # Droidは自身の実装も持つため、Qwenとの比較
+            timeout: 900  # Droidのタイムアウト: 900s (エンタープライズ品質保証に十分な時間)
             tasks:
-              - "Qwen実装 vs Droid実装の比較評価"
+              - "Qwen実装とDroid実装の比較評価"
               - "両方の良いところ取りハイブリッド実装"
-              - "パフォーマンス最適化"
-              - "バグ修正"
+              - "パフォーマンス最適化とエンタープライズ基準適用"
+              - "pytest実行による品質検証"
+              - "バグ修正とセキュリティ強化"
 
           # Phase 4: 品質保証と統合（Claude + Cursor）
           - name: "Final Quality Assurance & Integration"
+            depends_on: [2]  # Phase 3（Droidレビュー）に依存
             parallel:
               - name: "Claude - Architecture Validation"
                 ai: claude
@@ -139,16 +220,19 @@ profiles:
             timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
 
           - name: "Qwen Fast Prototype"
+            depends_on: [0]  # Phase 4 Tier 2 Task 4: Depends on Phase 0 (Quick Research)
             ai: qwen
             role: ultra-fast-prototype
             timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
 
           - name: "Quick Review"
+            depends_on: [1]  # Phase 4 Tier 2 Task 4: Depends on Phase 1 (Qwen Fast Prototype)
             ai: codex
             role: quick-review
             timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
 
           - name: "Integration"
+            depends_on: [2]  # Phase 4 Tier 2 Task 4: Depends on Phase 2 (Quick Review)
             ai: cursor
             role: fast-integration
             timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
@@ -174,27 +258,30 @@ profiles:
                 blocking: false
 
           - name: "Droid Enterprise Implementation"
+            depends_on: [0]  # Phase 4 Tier 2 Task 4: Depends on Phase 0 (Comprehensive Planning)
             ai: droid
             role: enterprise-full
             timeout: 900  # エンタープライズフル実装は最も時間がかかる
 
           - name: "Multi-layer Review"
+            depends_on: [1]  # Phase 4 Tier 2 Task 4: Depends on Phase 1 (Droid Implementation)
             parallel:
               - name: "Codex - Code Quality"
                 ai: codex
                 role: code-quality-review
-                timeout: 300  # タイムアウト統一: 120s→300s (安全マージン確保)
+                timeout: 900  # Timeout increased: 300s→900s (15 min) for comprehensive review tasks
               - name: "Qwen - Test Coverage"
                 ai: qwen
                 role: comprehensive-testing
-                timeout: 300  # タイムアウト統一: 90s→300s (安全マージン確保)
+                timeout: 900  # Timeout increased: 300s→900s (15 min) for comprehensive review tasks
               - name: "Claude - Architecture Audit"
                 ai: claude
                 role: architecture-audit
-                timeout: 300  # タイムアウト統一: 150s→300s (安全マージン確保)
+                timeout: 900  # Timeout increased: 300s→900s (15 min) for comprehensive review tasks
                 blocking: false
 
           - name: "Final Integration"
+            depends_on: [2]  # Phase 4 Tier 2 Task 4: Depends on Phase 2 (Multi-layer Review)
             ai: cursor
             role: enterprise-integration
             timeout: 300  # タイムアウト統一: 180s→300s (安全マージン確保)
@@ -212,6 +299,7 @@ profiles:
 
           # ステップ2: フィードバック収集
           - name: "Parallel Feedback"
+            depends_on: [0]  # Phase 4 Tier 2 Task 4: Depends on Phase 0 (Lightning Prototype)
             parallel:
               - name: "Claude - Strategic Feedback"
                 ai: claude
@@ -228,6 +316,7 @@ profiles:
 
           # ステップ3: 本番品質実装（Droid + Feedback）
           - name: "Production Implementation"
+            depends_on: [1]  # Phase 4 Tier 2 Task 4: Depends on Phase 1 (Parallel Feedback)
             ai: droid
             role: production-implementation
             input_from: ["qwen", "claude", "gemini"]
@@ -236,6 +325,7 @@ profiles:
 
           # ステップ4: 最適化（Codex）
           - name: "Optimization"
+            depends_on: [2]  # Phase 4 Tier 2 Task 4: Depends on Phase 2 (Production Implementation)
             ai: codex
             role: performance-optimization
             input: "production_v1"
@@ -244,6 +334,7 @@ profiles:
 
           # ステップ5: 最終統合とPM管理
           - name: "Final Integration & PM"
+            depends_on: [3]  # Phase 4 Tier 2 Task 4: Depends on Phase 3 (Optimization)
             parallel:
               - name: "Cursor - Integration"
                 ai: cursor
@@ -1395,24 +1486,27 @@ tdd_workflows:
     description: "Qwen主体の超高速TDD（2-4分）"
     plan:
       primary: qwen
+      fallback: cursor
       context: "Quick planning"
-      timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+      timeout: 600  # タイムアウト延長: 300s→600s (Phase 7テスト対応, 2025-11-26)
     red:
       primary: qwen
+      fallback: cursor
       context: "Fast test design"
-      timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+      timeout: 600  # タイムアウト延長: 300s→600s (Phase 7テスト対応, 2025-11-26)
     green:
       primary: qwen
+      fallback: cursor
       context: "Ultra-fast implementation"
-      timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+      timeout: 600  # タイムアウト延長: 300s→600s (Phase 7テスト対応, 2025-11-26)
     refactor:
       primary: codex
       context: "Quick optimization"
-      timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+      timeout: 600  # タイムアウト延長: 300s→600s (Phase 7テスト対応, 2025-11-26)
     review:
       primary: gemini
       context: "Quick technical review"
-      timeout: 300  # タイムアウト統一: 60s→300s (安全マージン確保)
+      timeout: 600  # タイムアウト延長: 300s→600s (Phase 7テスト対応, 2025-11-26)
 
   # Quality-First TDD (Droid中心)
   quality_first:
@@ -1456,7 +1550,7 @@ tdd_workflows:
       primary: droid
       fallback: qwen
       context: "Quality test design with speed fallback"
-      timeout: 600
+      timeout: 1200  # Phase 13 Test 2対応: 600s → 1200s（包括的テスト作成に十分な時間）
     green:
       primary: qwen
       fallback: droid

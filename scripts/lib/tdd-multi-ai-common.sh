@@ -197,8 +197,17 @@ invoke_ai() {
 
     echo -e "${TDD_CYAN}Invoking $ai_name (timeout: ${timeout}s)...${TDD_NC}" >&2
 
-    # Execute with timeout
-    timeout "${timeout}s" "$wrapper_script" --task "$task" 2>&1 || {
+    # Set AI-specific timeout environment variable to override AGENTS.md classification
+    # This ensures YAML config timeout takes precedence over dynamic task classification
+    local ai_upper
+    ai_upper=$(echo "$ai_name" | tr '[:lower:]' '[:upper:]')
+    local timeout_var="${ai_upper}_MCP_TIMEOUT"
+
+    # Export timeout to override wrapper's internal timeout
+    export "${timeout_var}=${timeout}"
+
+    # Execute with timeout (outer timeout as safety net)
+    timeout "${timeout}s" "$wrapper_script" --prompt "$task" 2>&1 || {
         local exit_code=$?
         if [ $exit_code -eq 124 ]; then
             echo -e "${TDD_YELLOW}$ai_name timeout after ${timeout}s${TDD_NC}" >&2
