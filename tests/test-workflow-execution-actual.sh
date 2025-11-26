@@ -116,9 +116,22 @@ main() {
     
     # PROJECT_ROOTをエクスポート（サブシェルで使用）
     export PROJECT_ROOT
-    
+
+    # all オプションの場合、全フェーズを順次実行
+    if [[ "$TEST_PHASE" == "all" ]]; then
+        log_info "All phases will be executed sequentially"
+        echo ""
+        for phase in phase1 phase2 phase3 phase4 phase5 phase6 phase7 phase8 phase9 phase10 phase11 phase12; do
+            log_info "========== Starting $phase =========="
+            TEST_PHASE="$phase"
+            # 各フェーズの処理を実行（再帰的にmainを呼ぶのではなく、フラグを変更して続行）
+        done
+        # allの場合はここで終了せず、以下の各フェーズ条件を全て通過させる
+        TEST_PHASE="all"
+    fi
+
     # Phase 1: 最小限の実行テスト
-    if [[ "$TEST_PHASE" == "phase1" ]]; then
+    if [[ "$TEST_PHASE" == "phase1" || "$TEST_PHASE" == "all" ]]; then
         log_info "Phase 1: 最小限の実行テスト（5-10分想定）"
         echo ""
         
@@ -194,7 +207,7 @@ main() {
     fi
     
     # Phase 2: 中規模ワークフローのテスト
-    if [[ "$TEST_PHASE" == "phase2" ]]; then
+    if [[ "$TEST_PHASE" == "phase2" || "$TEST_PHASE" == "all" ]]; then
         log_info "Phase 2: 中規模ワークフローのテスト（15-30分想定）"
         echo ""
         
@@ -238,7 +251,7 @@ main() {
     fi
     
     # Phase 3: 大規模ワークフローのテスト
-    if [[ "$TEST_PHASE" == "phase3" ]]; then
+    if [[ "$TEST_PHASE" == "phase3" || "$TEST_PHASE" == "all" ]]; then
         log_info "Phase 3: 大規模ワークフローのテスト（30-60分想定）"
         echo ""
 
@@ -282,7 +295,7 @@ main() {
     fi
 
     # Phase 4: 中規模ワークフローのテスト（30-40分想定）
-    if [[ "$TEST_PHASE" == "phase4" ]]; then
+    if [[ "$TEST_PHASE" == "phase4" || "$TEST_PHASE" == "all" ]]; then
         log_info "Phase 4: 中規模ワークフローのテスト（30-40分想定）"
         echo ""
 
@@ -391,7 +404,7 @@ main() {
     fi
 
     # Phase 5: 中規模ワークフローのテスト（15-20分想定）
-    if [[ "$TEST_PHASE" == "phase5" ]]; then
+    if [[ "$TEST_PHASE" == "phase5" || "$TEST_PHASE" == "all" ]]; then
         log_info "Phase 5: 中規模ワークフローのテスト（15-20分想定）"
         echo ""
 
@@ -500,7 +513,7 @@ main() {
     fi
 
     # Phase 6: 大規模ワークフローのテスト（30-60分想定）
-    if [[ "$TEST_PHASE" == "phase6" ]]; then
+    if [[ "$TEST_PHASE" == "phase6" || "$TEST_PHASE" == "all" ]]; then
         log_info "Phase 6: 大規模ワークフローのテスト（30-60分想定）"
         echo ""
 
@@ -576,7 +589,7 @@ main() {
     fi
 
     # Phase 7: TDDワークフローのテスト（10-20分想定）
-    if [[ "$TEST_PHASE" == "phase7" ]]; then
+    if [[ "$TEST_PHASE" == "phase7" || "$TEST_PHASE" == "all" ]]; then
         log_info "Phase 7: TDDワークフローのテスト（30-60分想定）"
         echo ""
 
@@ -658,7 +671,7 @@ main() {
     fi
 
     # Phase 8: レビューワークフローのテスト（15-30分想定）
-    if [[ "$TEST_PHASE" == "phase8" ]]; then
+    if [[ "$TEST_PHASE" == "phase8" || "$TEST_PHASE" == "all" ]]; then
         log_info "Phase 8: レビューワークフローのテスト（15-30分想定）"
         echo ""
 
@@ -791,7 +804,7 @@ main() {
     fi
 
     # Phase 9: サポートワークフロー（ディスカッション/プロトタイプ系、10-15分想定）
-    if [[ "$TEST_PHASE" == "phase9" ]]; then
+    if [[ "$TEST_PHASE" == "phase9" || "$TEST_PHASE" == "all" ]]; then
         log_info "Phase 9: サポートワークフロー（ディスカッション/プロトタイプ系、10-15分想定）"
         echo ""
 
@@ -854,7 +867,7 @@ main() {
     fi
 
     # Phase 10: サポートワークフロー（総合レビュー、15-20分想定）
-    if [[ "$TEST_PHASE" == "phase10" ]]; then
+    if [[ "$TEST_PHASE" == "phase10" || "$TEST_PHASE" == "all" ]]; then
         log_info "Phase 10: サポートワークフロー（総合レビュー、15-20分想定）"
         echo ""
 
@@ -891,7 +904,7 @@ main() {
     fi
 
     # Phase 11: TDD個別フェーズのテスト（15-25分想定）
-    if [[ "$TEST_PHASE" == "phase11" ]]; then
+    if [[ "$TEST_PHASE" == "phase11" || "$TEST_PHASE" == "all" ]]; then
         log_info "Phase 11: TDD個別フェーズのテスト（15-25分想定）"
         echo ""
 
@@ -1046,7 +1059,7 @@ main() {
     fi
 
     # Phase 12: ペアプログラミング・Fork-Joinのテスト（15-20分想定）
-    if [[ "$TEST_PHASE" == "phase12" ]]; then
+    if [[ "$TEST_PHASE" == "phase12" || "$TEST_PHASE" == "all" ]]; then
         log_info "Phase 12: ペアプログラミング・Fork-Joinのテスト（15-20分想定）"
         echo ""
 
