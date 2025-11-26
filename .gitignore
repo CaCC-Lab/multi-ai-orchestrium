@@ -228,6 +228,9 @@ tests/
 !docs/worktree/
 !docs/worktree/**
 
+# Exception: Keep workflow execution test (essential for CI/CD)
+!tests/test-workflow-execution-actual.sh
+
 
 # ========== Keep These Files ==========
 # Keep empty log directories with .gitkeep
