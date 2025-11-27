@@ -1,0 +1,307 @@
+# Lite Mode Profiles Configuration
+# Version: 1.0.0
+# Date: 2025-11-27
+#
+# Purpose: 1-3AI構成でも動作するLite Modeの定義
+# 7AI全てがなくても段階的に機能を利用可能
+
+version: "1.0.0"
+
+# ============================================================================
+# Mode Definitions
+# ============================================================================
+
+modes:
+  # Single AI Mode (1 AI)
+  single:
+    name: "Single AI Mode"
+    description: "1つのAIで基本操作を実行"
+    min_ai_count: 1
+    max_ai_count: 1
+    capabilities:
+      - basic_review
+      - simple_task
+    limitations:
+      - no_parallel_execution
+      - no_consensus
+      - limited_coverage
+    
+  # Basic Mode (2-3 AIs)
+  basic:
+    name: "Basic Mode"
+    description: "2-3のAIでコアワークフローを実行"
+    min_ai_count: 2
+    max_ai_count: 3
+    capabilities:
+      - basic_review
+      - simple_task
+      - basic_orchestration
+      - fallback_support
+    limitations:
+      - limited_parallel
+      - no_full_consensus
+    
+  # Standard Mode (4-5 AIs)
+  standard:
+    name: "Standard Mode"
+    description: "4-5のAIでほとんどのワークフローを実行"
+    min_ai_count: 4
+    max_ai_count: 5
+    capabilities:
+      - all_reviews
+      - orchestration
+      - parallel_execution
+      - tdd_workflow
+    limitations:
+      - partial_consensus
+    
+  # Full Mode (6-7 AIs)
+  full:
+    name: "Full Mode"
+    description: "全AIで完全なワークフローを実行"
+    min_ai_count: 6
+    max_ai_count: 7
+    capabilities:
+      - all_features
+      - full_consensus
+      - maximum_redundancy
+
+# ============================================================================
+# AI Priority & Fallback Chains
+# ============================================================================
+
+ai_priority:
+  # Core AIs (Priority 1) - 最低1つは必要
+  core:
+    - claude    # Strategy, Architecture
+    - gemini    # Research, Security
+    
+  # Important AIs (Priority 2) - 推奨
+  important:
+    - qwen      # Fast Prototype
+    - droid     # Enterprise Quality
+    
+  # Optional AIs (Priority 3) - フル機能用
+  optional:
+    - codex     # Review, Optimization
+    - cursor    # IDE Integration
+    - amp       # Project Management
+
+# ロール別フォールバックチェーン
+fallback_chains:
+  strategy:
+    primary: claude
+    fallbacks: [gemini, amp, droid]
+    
+  research:
+    primary: gemini
+    fallbacks: [claude, amp]
+    
+  prototype:
+    primary: qwen
+    fallbacks: [claude, cursor, droid]
+    
+  enterprise:
+    primary: droid
+    fallbacks: [claude, qwen]
+    
+  review:
+    primary: codex
+    fallbacks: [claude, gemini, droid]
+    
+  integration:
+    primary: cursor
+    fallbacks: [qwen, codex, claude]
+    
+  pm:
+    primary: amp
+    fallbacks: [claude, gemini]
+
+# ============================================================================
+# Lite Mode Workflows
+# ============================================================================
+
+workflows:
+  # Single AI Workflow
+  lite-single-task:
+    description: "Single AI で基本タスクを実行"
+    min_mode: single
+    phases:
+      - name: "Execute Task"
+        ai: "{best_available}"  # 動的に最適なAIを選択
+        role: general-task
+        timeout: 600
+
+  # Basic 2-AI Workflow
+  lite-basic-review:
+    description: "2AI でシンプルレビュー (Primary + Fallback)"
+    min_mode: basic
+    phases:
+      - name: "Primary Review"
+        ai: "{role:review}"
+        role: code-review
+        timeout: 600
+        
+      - name: "Secondary Check"
+        ai: "{role:strategy}"
+        role: verification
+        timeout: 300
+        depends_on: [0]
+
+  # Basic 3-AI Development
+  lite-basic-development:
+    description: "3AI で基本開発フロー"
+    min_mode: basic
+    phases:
+      - name: "Plan"
+        ai: "{role:strategy}"
+        role: planning
+        timeout: 300
+        
+      - name: "Implement"
+        ai: "{role:prototype}"
+        role: implementation
+        timeout: 600
+        depends_on: [0]
+        
+      - name: "Review"
+        ai: "{role:review}"
+        role: code-review
+        timeout: 300
+        depends_on: [1]
+
+  # Standard Parallel Development
+  lite-standard-development:
+    description: "4-5AI で並列開発"
+    min_mode: standard
+    phases:
+      - name: "Research & Planning"
+        parallel:
+          - ai: "{role:research}"
+            role: research
+            timeout: 300
+          - ai: "{role:strategy}"
+            role: architecture
+            timeout: 300
+            
+      - name: "Parallel Implementation"
+        depends_on: [0]
+        parallel:
+          - ai: "{role:prototype}"
+            role: fast-prototype
+            timeout: 300
+          - ai: "{role:enterprise}"
+            role: quality-implementation
+            timeout: 600
+            
+      - name: "Review & Integration"
+        depends_on: [1]
+        ai: "{role:review}"
+        role: compare-and-merge
+        timeout: 300
+
+  # Standard TDD Lite
+  lite-tdd-cycle:
+    description: "Lite Mode TDD サイクル"
+    min_mode: basic
+    phases:
+      - name: "Plan"
+        ai: "{role:strategy}"
+        role: tdd-planning
+        timeout: 300
+        
+      - name: "Red - Write Tests"
+        ai: "{role:prototype}"
+        role: test-design
+        timeout: 300
+        depends_on: [0]
+        
+      - name: "Green - Implement"
+        ai: "{role:prototype}"
+        role: implementation
+        timeout: 600
+        depends_on: [1]
+        
+      - name: "Refactor & Review"
+        ai: "{role:review}"
+        role: refactor-review
+        timeout: 300
+        depends_on: [2]
+
+  # Quick Review (any mode)
+  lite-quick-review:
+    description: "クイックレビュー (1AI で即実行)"
+    min_mode: single
+    phases:
+      - name: "Quick Review"
+        ai: "{best_available}"
+        role: quick-review
+        timeout: 300
+
+# ============================================================================
+# Auto-Selection Rules
+# ============================================================================
+
+auto_selection:
+  # タスクタイプに基づく自動ワークフロー選択
+  rules:
+    - pattern: "review|check|audit"
+      single: lite-quick-review
+      basic: lite-basic-review
+      standard: lite-basic-review
+      full: multi-ai-review-after
+      
+    - pattern: "develop|implement|create|build"
+      single: lite-single-task
+      basic: lite-basic-development
+      standard: lite-standard-development
+      full: multi-ai-full-orchestrate
+      
+    - pattern: "tdd|test"
+      single: lite-single-task
+      basic: lite-tdd-cycle
+      standard: lite-tdd-cycle
+      full: tdd-multi-ai-cycle
+      
+    - pattern: "plan|design|architect"
+      single: lite-single-task
+      basic: lite-basic-development
+      standard: lite-standard-development
+      full: multi-ai-discuss-before
+
+# ============================================================================
+# UI Messages
+# ============================================================================
+
+messages:
+  mode_single:
+    banner: |
+      ╔══════════════════════════════════════════════════════════════╗
+      ║  🔹 LITE MODE: Single AI                                     ║
+      ║  Running with 1 AI - Basic functionality available           ║
+      ╚══════════════════════════════════════════════════════════════╝
+    tip: "Install more AIs for enhanced features: ./scripts/lite-mode/setup-wizard.sh"
+    
+  mode_basic:
+    banner: |
+      ╔══════════════════════════════════════════════════════════════╗
+      ║  🔸 LITE MODE: Basic (2-3 AIs)                               ║
+      ║  Core workflows available with fallback support              ║
+      ╚══════════════════════════════════════════════════════════════╝
+    tip: "Add more AIs for parallel execution and full TDD support"
+    
+  mode_standard:
+    banner: |
+      ╔══════════════════════════════════════════════════════════════╗
+      ║  🔶 STANDARD MODE (4-5 AIs)                                  ║
+      ║  Most workflows available including parallel execution       ║
+      ╚══════════════════════════════════════════════════════════════╝
+    tip: "Install remaining AIs for full 7AI consensus features"
+    
+  mode_full:
+    banner: |
+      ╔══════════════════════════════════════════════════════════════╗
+      ║  ✅ FULL MODE (6-7 AIs)                                      ║
+      ║  All features available - Maximum AI collaboration           ║
+      ╚══════════════════════════════════════════════════════════════╝
+    tip: "You're running the complete Multi-AI Orchestrium!"
