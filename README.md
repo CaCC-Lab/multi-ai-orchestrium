@@ -5,17 +5,19 @@
 ChatDevとChain-of-Agentsを統合し、Claude、Gemini、Amp、Qwen、Droid、Codex、Cursorの7つのAIツールを並列・順次実行で協調させ、高速かつ高品質な開発を実現します。
 
 [![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)]()
-[![Version](https://img.shields.io/badge/Version-v3.0-blue)]()
+[![Version](https://img.shields.io/badge/Version-v3.1-blue)]()
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-47%2B%20passing-success)]()
 [![Worktree](https://img.shields.io/badge/Worktree-Integrated-blueviolet)]()
+[![Lite Mode](https://img.shields.io/badge/Lite%20Mode-1--7%20AIs-orange)]()
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=github-actions&logoColor=white)](.github/workflows/worktree-test.yml)
 
 ## 🌟 主な特徴
 
+- **🆕 Lite Mode**: 1-3 AIでも動作！全7AI不要で段階的に導入可能
 - **YAML駆動設計**: スクリプト変更なしで役割分担を変更可能
 - **2つの協調パターン**: ChatDev（役割ベース）+ Chain-of-Agents（分割統治）
-- **Git Worktrees統合** (NEW!): ファイル競合なしの完全並列実行、クリーンアップ成功率100%
+- **Git Worktrees統合**: ファイル競合なしの完全並列実行、クリーンアップ成功率100%
 - **13個のレビューシステム**: 5AI個別 + 3コア + Claude専用2 + その他2 + 統一IF + 自動ルーティング
 - **Primary/Fallback機構**: 高可用性98%以上
 - **VibeLogger統合**: AI最適化された構造化ログ
@@ -52,6 +54,33 @@ pip install -r requirements.txt
 # 4) AIツールの可用性確認
 ./check-multi-ai-tools.sh
 ```
+
+## 🔹 Lite Mode（1-3 AIで始める）
+
+**全7AI不要！** 1つのAIからでも始められます。
+
+```bash
+# AI可用性チェック
+./scripts/lite-mode/lite-mode-checker.sh
+
+# セットアップウィザード（インタラクティブ）
+./scripts/lite-mode/setup-wizard.sh
+
+# Lite Modeでタスク実行
+source scripts/lite-mode/lite-mode-orchestrator.sh
+lite_orchestrate "implement user authentication"
+```
+
+### モード一覧
+
+| モード | AI数 | 機能 |
+|--------|------|------|
+| 🔹 Single | 1 | 基本操作、シンプルなタスク |
+| 🔸 Basic | 2-3 | コアワークフロー、フォールバック |
+| 🔶 Standard | 4-5 | 並列実行、TDDワークフロー |
+| ✅ Full | 6-7 | 全機能、7AI合意形成 |
+
+詳細: [docs/LITE_MODE_GUIDE.md](docs/LITE_MODE_GUIDE.md)
 
 ## 📋 基本的な使用方法
 
@@ -232,6 +261,6 @@ Copyright (c) 2025 Multi-AI Orchestrium Contributors
 
 ---
 
-**Version**: v3.0
+**Version**: v3.1
 **Status**: ✅ Production Ready
-**Last Updated**: 2025-10-28
+**Last Updated**: 2025-11-27
