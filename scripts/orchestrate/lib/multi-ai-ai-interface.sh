@@ -13,6 +13,33 @@
 
 set -euo pipefail
 
+# ============================================================================
+# AI Fallback Mapping (2025-11-27)
+# Purpose: Define fallback AIs for each primary AI when failures occur
+# ============================================================================
+
+# Fallback mapping: primary_ai -> fallback_ai
+# Logic: Similar capability, different provider for redundancy
+declare -A AI_FALLBACK_MAP=(
+    ["codex"]="claude"      # Codex -> Claude (both strong at code review)
+    ["qwen"]="droid"        # Qwen -> Droid (both for implementation)
+    ["droid"]="qwen"        # Droid -> Qwen (reverse fallback)
+    ["cursor"]="claude"     # Cursor -> Claude (IDE integration fallback)
+    ["gemini"]="claude"     # Gemini -> Claude (research/security fallback)
+    ["amp"]="gemini"        # Amp -> Gemini (PM/docs fallback)
+    ["claude"]="gemini"     # Claude -> Gemini (strategic fallback)
+)
+
+# Get fallback AI for a given primary AI
+# Returns empty string if no fallback defined
+get_fallback_ai() {
+    local primary_ai="$1"
+    echo "${AI_FALLBACK_MAP[$primary_ai]:-}"
+}
+
+# Enable/disable auto-fallback (default: enabled)
+ENABLE_AI_FALLBACK="${ENABLE_AI_FALLBACK:-true}"
+
 # Source workflow optimizer modules if feature flags are enabled
 if [[ "${ENABLE_FAILURE_RETRY:-false}" == "true" ]] || [[ "${ENABLE_PARALLELISM_ETA:-false}" == "true" ]] || [[ "${ENABLE_CONFIG_OPTIMIZER:-false}" == "true" ]]; then
     # Source failure-retry.sh for failure retry policy
@@ -386,17 +413,41 @@ call_ai_with_context() {
     local context="$2"
     local timeout="${3:-300}"
     local output_file="${4:-}"
-    
+    local exit_code=0
+
     # Feature Flag check for failure retry
     if [[ "${ENABLE_FAILURE_RETRY:-false}" == "true" ]]; then
         # Use retry policy
         execute_with_retry_policy "$ai_name" call_ai_with_context_internal "$ai_name" "$context" "$timeout" "$output_file"
-        return $?
+        exit_code=$?
     else
         # Original implementation without retry
         call_ai_with_context_original "$ai_name" "$context" "$timeout" "$output_file"
-        return $?
+        exit_code=$?
     fi
+
+    # Auto-fallback mechanism (2025-11-27)
+    # If primary AI fails and fallback is enabled, try fallback AI
+    if [[ $exit_code -ne 0 ]] && [[ "${ENABLE_AI_FALLBACK:-true}" == "true" ]]; then
+        local fallback_ai
+        fallback_ai=$(get_fallback_ai "$ai_name")
+
+        if [[ -n "$fallback_ai" ]]; then
+            log_warning "[$ai_name] Failed (exit_code=$exit_code), falling back to [$fallback_ai]"
+
+            # Disable fallback for the fallback call to prevent infinite loops
+            ENABLE_AI_FALLBACK=false call_ai_with_context_original "$fallback_ai" "$context" "$timeout" "$output_file"
+            exit_code=$?
+
+            if [[ $exit_code -eq 0 ]]; then
+                log_info "[$fallback_ai] Fallback succeeded"
+            else
+                log_error "[$fallback_ai] Fallback also failed (exit_code=$exit_code)"
+            fi
+        fi
+    fi
+
+    return $exit_code
 }
 
 # Validate timeout argument to prevent "invalid time interval" errors
