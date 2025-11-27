@@ -229,6 +229,59 @@ wrapper_apply_timeout() {
 }
 
 # ============================================================================
+# 5b. wrapper_apply_timeout_with_pty()
+# ============================================================================
+# Purpose: Apply timeout strategy with PTY (pseudo-terminal) support
+#          Required for CLIs like Codex that require TTY
+# Args:
+#   $1 - Timeout value (seconds or "60s" format)
+#   $2 - Prompt text to pass as argument
+#   $3+ - Command array to execute (prompt will be appended)
+# Returns: Exit code from command execution
+
+wrapper_apply_timeout_with_pty() {
+  local timeout_value="$1"
+  local prompt="$2"
+  shift 2
+  local command=("$@")
+
+  # Convert timeout to seconds
+  local timeout_arg="$timeout_value"
+  if command -v to_seconds >/dev/null 2>&1; then
+    timeout_arg="$(to_seconds "$timeout_value")"
+  fi
+
+  # Build command string with properly escaped prompt
+  # For Codex: codex exec --sandbox workspace-write "prompt here"
+  local cmd_str=""
+  for arg in "${command[@]}"; do
+    cmd_str+="'${arg//\'/\'\\\'\'}' "
+  done
+  # Add prompt with proper escaping (single quotes)
+  cmd_str+="'${prompt//\'/\'\\\'\'}'"
+
+  # Use 'script' command to provide PTY
+  # -q: quiet mode (no "Script started" messages)
+  # -c: command to execute
+  # /dev/null: don't save typescript file
+  local exit_code=0
+
+  if [[ "${WRAPPER_SKIP_TIMEOUT:-}" == "1" ]]; then
+    # Called from workflow - outer timeout manages execution
+    script -q -c "$cmd_str" /dev/null || exit_code=$?
+  else
+    # Standalone execution - apply timeout
+    if command -v timeout >/dev/null 2>&1; then
+      timeout "$timeout_arg" script -q -c "$cmd_str" /dev/null || exit_code=$?
+    else
+      script -q -c "$cmd_str" /dev/null || exit_code=$?
+    fi
+  fi
+
+  return $exit_code
+}
+
+# ============================================================================
 # 6. wrapper_run_ai()
 # ============================================================================
 # Purpose: Execute AI CLI command with full wrapper logic
@@ -322,7 +375,18 @@ wrapper_run_ai() {
 
   # Use a subshell to execute the command and capture exit code for circuit breaker
   local exit_code=0
-  printf '%s' "$prompt" | wrapper_apply_timeout "$final_timeout" "${ai_command[@]}" || exit_code=$?
+
+  # Check if AI requires PTY (Codex CLI requires TTY)
+  if [[ "$ai_name" == "Codex" ]] && command -v script >/dev/null 2>&1; then
+    # Use PTY wrapper for Codex (requires TTY)
+    echo "ℹ️  [$ai_name] Using PTY mode (TTY required)" >&2
+
+    # Execute with PTY - pass prompt as argument (not stdin)
+    wrapper_apply_timeout_with_pty "$final_timeout" "$prompt" "${ai_command[@]}" || exit_code=$?
+  else
+    # Standard execution via stdin pipe
+    printf '%s' "$prompt" | wrapper_apply_timeout "$final_timeout" "${ai_command[@]}" || exit_code=$?
+  fi
 
   # Record result in circuit breaker if available
   if [[ -f "${SCRIPT_DIR}/../src/core/circuit-breaker.sh" ]]; then
