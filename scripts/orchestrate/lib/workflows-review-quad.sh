@@ -431,9 +431,12 @@ multi-ai-quad-review() {
 
     local phase1_failed=false
     local failed_reviews=()
-    
-    if ! wait $codex_pid; then
-        local exit_code=$?
+    local exit_code
+
+    # Codex review
+    wait $codex_pid
+    exit_code=$?
+    if [ $exit_code -ne 0 ]; then
         if [ $exit_code -eq 124 ]; then
             log_error "Codex review timed out (${codex_hard_timeout}s). See $codex_log"
         else
@@ -443,9 +446,11 @@ multi-ai-quad-review() {
         failed_reviews+=("codex")
     fi
     _quad_review_mark_pid_complete "$codex_pid" "phase1"
-    
-    if ! wait $coderabbit_pid; then
-        local exit_code=$?
+
+    # CodeRabbit review
+    wait $coderabbit_pid
+    exit_code=$?
+    if [ $exit_code -ne 0 ]; then
         if [ $exit_code -eq 124 ]; then
             log_error "CodeRabbit review timed out (${coderabbit_hard_timeout}s). See $coderabbit_log"
         else
@@ -455,9 +460,11 @@ multi-ai-quad-review() {
         failed_reviews+=("coderabbit")
     fi
     _quad_review_mark_pid_complete "$coderabbit_pid" "phase1"
-    
-    if ! wait $claude_comp_pid; then
-        local exit_code=$?
+
+    # Claude comprehensive review
+    wait $claude_comp_pid
+    exit_code=$?
+    if [ $exit_code -ne 0 ]; then
         if [ $exit_code -eq 124 ]; then
             log_error "Claude comprehensive review timed out (${claude_comp_hard_timeout}s). See $claude_comp_log"
         else
@@ -467,9 +474,11 @@ multi-ai-quad-review() {
         failed_reviews+=("claude_comprehensive")
     fi
     _quad_review_mark_pid_complete "$claude_comp_pid" "phase1"
-    
-    if ! wait $claude_sec_pid; then
-        local exit_code=$?
+
+    # Claude security review
+    wait $claude_sec_pid
+    exit_code=$?
+    if [ $exit_code -ne 0 ]; then
         if [ $exit_code -eq 124 ]; then
             log_error "Claude security review timed out (${claude_sec_hard_timeout}s). See $claude_sec_log"
         else

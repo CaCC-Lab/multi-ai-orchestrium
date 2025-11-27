@@ -472,6 +472,17 @@ EOF
 
     call_ai_with_context "cursor" "$cursor_prompt" 900 "$cursor_output"
 
+    # Validate cursor output (check for error responses)
+    local cursor_valid=false
+    if [ -f "$cursor_output" ]; then
+        if validate_cache_content "$cursor_output" 2>/dev/null; then
+            cursor_valid=true
+        else
+            log_warning "Cursor output contains error response, will use fallback"
+            rm -f "$cursor_output" 2>/dev/null
+        fi
+    fi
+
     # Display results
     echo ""
     log_success "🎉 TRUE Multi-AI Speed Prototype Complete!"
@@ -480,20 +491,21 @@ EOF
     ls -lh "$OUTPUT_DIR" 2>/dev/null || log_warning "No files generated"
     echo ""
 
-    if [ -f "$cursor_output" ]; then
+    if [ "$cursor_valid" = "true" ] && [ -f "$cursor_output" ]; then
         log_info "Final Implementation (Cursor統合):"
         echo ""
         cat "$cursor_output"
-    elif [ -f "$droid_output" ]; then
+    elif [ -f "$droid_output" ] && validate_cache_content "$droid_output" 2>/dev/null; then
         log_warning "Cursor failed, showing Droid implementation:"
         echo ""
         cat "$droid_output"
-    elif [ -f "$qwen_output" ]; then
+    elif [ -f "$qwen_output" ] && validate_cache_content "$qwen_output" 2>/dev/null; then
         log_warning "Droid & Cursor failed, showing Qwen prototype:"
         echo ""
         cat "$qwen_output"
     else
-        log_error "No implementation generated"
+        log_error "No valid implementation generated (all outputs contain errors)"
+        return 1
     fi
     echo ""
 
