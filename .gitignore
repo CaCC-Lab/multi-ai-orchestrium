@@ -230,6 +230,7 @@ tests/
 
 # Exception: Keep workflow execution test (essential for CI/CD)
 !tests/test-workflow-execution-actual.sh
+!tests/test-failed-workflows-retry.sh
 
 
 # ========== Keep These Files ==========
